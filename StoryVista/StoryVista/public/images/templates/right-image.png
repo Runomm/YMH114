@@ -1,0 +1,16 @@
+<!-- 
+  Not: Bu bir SVG dosyasıdır, ancak PNG olarak kaydedilmesi gerekir.
+  right-image.png adıyla .png uzantılı olarak kullanılmalıdır.
+-->
+
+<svg width="200" height="150" viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg">
+  <rect width="200" height="150" fill="#f8fafc" />
+  
+  <!-- Sağ Görsel Layoutu -->
+  <rect x="110" y="30" width="70" height="90" rx="2" fill="#bfdbfe" />
+  <rect x="20" y="30" width="80" height="12" rx="2" fill="#e2e8f0" />
+  <rect x="20" y="50" width="80" height="10" rx="2" fill="#e2e8f0" />
+  <rect x="20" y="70" width="80" height="10" rx="2" fill="#e2e8f0" />
+  <rect x="20" y="90" width="60" height="10" rx="2" fill="#e2e8f0" />
+  <rect x="20" y="110" width="40" height="10" rx="2" fill="#e2e8f0" />
+</svg> 

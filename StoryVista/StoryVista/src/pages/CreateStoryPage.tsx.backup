@@ -1,0 +1,2017 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { generateCompleteStory, generateStoryAudio, StoryPrompt, StoryResponse, generateStoryImage, PackageType as AIServicePackageType, getPageCountByPackage } from '../lib/aiService';
+import { useAuth } from '../lib/authContext';
+import { supabase } from '../lib/supabase';
+import { v4 as uuidv4 } from 'uuid';
+import BookCover from '../components/BookCover';
+import BookEditor from '../components/BookEditor';
+import { createAIStory, ExtendedStoryPrompt } from '../lib/storyService';
+import { toast } from 'react-hot-toast';
+import BookPage from '../components/BookPage';
+import FullBookPreview from '../components/FullBookPreview';
+import TemplateType from '../lib/templateType';
+import StyleThemeCard from '../components/StyleThemeCard';
+import CoverStyleCard from '../components/CoverStyleCard';
+import PageLayoutCard from '../components/PageLayoutCard';
+
+// Kullanıcı tipi için enum
+enum UserExperienceType {
+  PROFESSIONAL = 'professional',  // Profesyonelim, kendim yazarım
+  GUIDED = 'guided',              // Yönlendirme isterim, birlikte yazalım
+  NOVICE = 'novice'               // Sıfırdan yardım et, sadece fikrim var
+}
+
+// Hikaye kategorileri
+enum StoryCategory {
+  ADVENTURE = 'Macera',
+  ROMANCE = 'Romantizm',
+  SCIFI = 'Bilim Kurgu',
+  THRILLER = 'Gerilim',
+  FANTASY = 'Fantastik',
+  HISTORY = 'Tarih'
+}
+
+// Hikaye tonu
+enum StoryTone {
+  SERIOUS = 'serious',
+  HUMOROUS = 'humorous',
+  ROMANTIC = 'romantic',
+  THRILLER = 'thriller'
+}
+
+// Hikaye oluşturma aşamaları
+enum StoryCreationStep {
+  USER_TYPE_SELECTION = 'userTypeSelection',  // Kullanıcı tipi seçimi
+  IDEA_CREATION = 'ideaCreation',            // Hikaye fikri oluşturma
+  STORY_WRITING = 'storyWriting',            // Hikaye yazımı
+  IMAGE_CREATION = 'imageCreation',          // Görsel oluşturma
+  STYLE_SELECTION = 'styleSelection',        // Stil seçimi
+  PREVIEW_PUBLISH = 'previewPublish'         // Önizleme ve yayınlama
+}
+
+// Stil temaları
+enum ThemeStyle {
+  CHILDREN = 'children',   // Çocuk masalı
+  MODERN = 'modern',       // Modern, temiz düzen
+  FANTASY = 'fantasy',     // Fantastik, renkli
+  ADVENTURE = 'adventure'  // Macera teması
+}
+
+// Paket tipi için enum
+enum PackageType {
+  STANDARD = 'standard',
+  DELUXE = 'deluxe',
+  PREMIUM = 'premium',
+  NORMAL = 'normal'
+}
+
+// Hikaye verisi tipi
+interface StoryData {
+  id: string;
+  title: string;
+  category: StoryCategory;
+  userType: UserExperienceType;
+  tone: StoryTone;
+  mainCharacter: string;
+  setting: string;
+  problem: string;
+  storyIdea: string;
+  content: string;
+  pages: StoryPage[];
+  style: ThemeStyle;
+  coverImage?: string;
+  audioEnabled: boolean;
+  published: boolean;
+  authorName: string;
+  packageType: AIServicePackageType; // aiService'den gelen enum'ı kullanıyoruz
+  pageCount: number; // İstenen sayfa sayısı
+  imageStyle?: string;
+  colorTone?: string;
+  detailLevel?: number;
+  // Yeni eklenenler
+  coverStyle?: 'light' | 'dark' | 'colorful' | 'minimal';
+  pageLayout?: TemplateType;
+  voiceType?: string;
+  voiceSpeed?: number;
+}
+
+// Hikaye sayfası tipi
+interface StoryPage {
+  id: string;
+  pageNumber: number;
+  content: string;
+  image?: string;
+  imagePrompt?: string;
+  title?: string;
+  isTitle?: boolean;
+  imageStyle?: string;
+  colorTone?: string;
+  detailLevel?: number;
+}
+
+// Başlangıç hikaye verisi
+const initialStoryData: StoryData = {
+  id: uuidv4(),
+  title: '',
+  category: StoryCategory.ADVENTURE,
+  userType: UserExperienceType.GUIDED,
+  tone: StoryTone.SERIOUS,
+  mainCharacter: '',
+  setting: '',
+  problem: '',
+  storyIdea: '',
+  content: '',
+  pages: [],
+  style: ThemeStyle.CHILDREN,
+  audioEnabled: false,
+  published: false,
+  authorName: '',
+  packageType: AIServicePackageType.NORMAL, // Varsayılan olarak normal paket
+  pageCount: 6 // Varsayılan olarak 6 sayfa
+};
+
+const CreateStoryPage: React.FC = () => {
+  const { user } = useAuth();
+  const [storyData, setStoryData] = useState<StoryData>(initialStoryData);
+  const [currentStep, setCurrentStep] = useState<StoryCreationStep>(StoryCreationStep.USER_TYPE_SELECTION);
+  const [isLoading, setIsLoading] = useState(false);
+  const [generatedText, setGeneratedText] = useState('');
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [aiAssistantVisible, setAiAssistantVisible] = useState(false);
+  const [assistantMessage, setAssistantMessage] = useState('');
+  const [isPageLoading, setIsPageLoading] = useState(false);
+  const [currentImagePageIndex, setCurrentImagePageIndex] = useState<number>(-1);
+  const [notificationMessage, setNotificationMessage] = useState<{text: string, type: 'info' | 'success' | 'error' | 'warning'} | null>(null);
+
+  // Hikaye için ses oluştur
+  const generateAudio = async (text: string): Promise<boolean> => {
+    try {
+      setIsLoading(true);
+      showNotification('Ses dosyası oluşturuluyor...', 'info');
+      
+      // Gerçek API çağrısı burada yapılacak
+      // const audioUrl = await generateStoryAudio(text);
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      showNotification('Ses dosyası başarıyla oluşturuldu', 'success');
+      return true;
+    } catch (error) {
+      console.error('Ses oluşturma hatası:', error);
+      showNotification('Ses dosyası oluşturulurken bir hata oluştu', 'error');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // Hikayeyi taslak olarak kaydet
+  const saveStoryAsDraft = async () => {
+    if (!user) {
+      toast.error('Hikaye kaydetmek için giriş yapmalısınız');
+      return;
+    }
+    
+    if (!storyData.title) {
+      showNotification('Lütfen hikayenize bir başlık verin', 'warning');
+      return;
+    }
+    
+    setIsLoading(true);
+    showNotification('Hikaye taslak olarak kaydediliyor...', 'info');
+    
+    try {
+      // Supabase'e taslak olarak kaydet
+      const { data, error } = await supabase
+        .from('stories')
+        .insert({
+          id: storyData.id,
+          title: storyData.title || 'İsimsiz Hikaye',
+          content: storyData.content,
+          category_id: storyData.category,
+          user_id: user.id,
+          cover_image: storyData.coverImage,
+          status: 'draft',
+          style: storyData.style
+        });
+        
+      if (error) throw error;
+      
+      showNotification('Hikayeniz taslak olarak kaydedildi', 'success');
+    } catch (error) {
+      console.error('Hikaye taslak kaydetme hatası:', error);
+      showNotification('Hikaye kaydedilirken bir hata oluştu', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Kullanıcı adını başlangıçta ayarla
+  useEffect(() => {
+    if (user) {
+      setStoryData(prev => ({
+        ...prev,
+        authorName: user.user_metadata?.full_name || user.email || 'Yazar'
+      }));
+    }
+  }, [user]);
+
+  // Sayfa yüklendiğinde başlangıç verilerini hazırla
+  useEffect(() => {
+    if (user) {
+      setIsPageLoading(true);
+      setNotificationMessage({
+        text: 'Hikaye oluşturma sayfası hazırlanıyor...',
+        type: 'info'
+      });
+      
+      // Kullanıcı verileri hazırlanıyor
+      setTimeout(() => {
+        setIsPageLoading(false);
+        setNotificationMessage({
+          text: 'Hikaye oluşturmaya başlayabilirsiniz!',
+          type: 'success'
+        });
+        
+        // 3 saniye sonra bildirimi kapat
+        setTimeout(() => {
+          setNotificationMessage(null);
+        }, 3000);
+      }, 1000);
+    }
+  }, [user]);
+
+  // Adım ilerletme fonksiyonu
+  const goToNextStep = () => {
+    // Adım geçişleri kullanıcı tipine göre belirlenir
+    switch (currentStep) {
+      case StoryCreationStep.USER_TYPE_SELECTION:
+        setCurrentStep(StoryCreationStep.IDEA_CREATION);
+        break;
+      case StoryCreationStep.IDEA_CREATION:
+        // Fikir kısmından sonraki adıma geçiş
+        setCurrentStep(StoryCreationStep.STORY_WRITING);
+        break;
+      case StoryCreationStep.STORY_WRITING:
+        organizeIntoPages();
+        setCurrentStep(StoryCreationStep.IMAGE_CREATION);
+        break;
+      case StoryCreationStep.IMAGE_CREATION:
+        setCurrentStep(StoryCreationStep.STYLE_SELECTION);
+        break;
+      case StoryCreationStep.STYLE_SELECTION:
+        setCurrentStep(StoryCreationStep.PREVIEW_PUBLISH);
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Önceki adıma gitme fonksiyonu
+  const goToPreviousStep = () => {
+    switch (currentStep) {
+      case StoryCreationStep.IDEA_CREATION:
+        setCurrentStep(StoryCreationStep.USER_TYPE_SELECTION);
+        break;
+      case StoryCreationStep.STORY_WRITING:
+        setCurrentStep(StoryCreationStep.IDEA_CREATION);
+        break;
+      case StoryCreationStep.IMAGE_CREATION:
+        setCurrentStep(StoryCreationStep.STORY_WRITING);
+        break;
+      case StoryCreationStep.STYLE_SELECTION:
+        setCurrentStep(StoryCreationStep.IMAGE_CREATION);
+        break;
+      case StoryCreationStep.PREVIEW_PUBLISH:
+        setCurrentStep(StoryCreationStep.STYLE_SELECTION);
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Kullanıcı tipini ayarla
+  const setUserType = (type: UserExperienceType) => {
+    setStoryData(prev => ({ ...prev, userType: type }));
+    // Acemi kullanıcılar için AI asistanı görünür yap
+    if (type === UserExperienceType.NOVICE || type === UserExperienceType.GUIDED) {
+      setAiAssistantVisible(true);
+      setAssistantMessage('Merhaba! Hikaye oluşturmanızda size yardımcı olacağım. İlk adımda hikaye fikrinizi paylaşabilirsiniz.');
+    } else {
+      setAiAssistantVisible(false);
+    }
+    goToNextStep();
+  };
+
+  // Hikaye fikrinden tam hikaye oluştur
+  const generateStoryFromIdea = async () => {
+    if (!storyData.storyIdea || !storyData.title || !storyData.mainCharacter || !storyData.setting || !storyData.problem) {
+      toast.error('Lütfen tüm hikaye detaylarını doldurun');
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      // Prompt oluştur - aiService.ts içindeki StoryPrompt tipine uygun olmalı
+      const prompt: StoryPrompt = {
+        category: storyData.category,
+        tone: storyData.tone,
+        characterCount: 3,
+        length: 'medium',
+        inspiration: storyData.storyIdea + ` Problem: ${storyData.problem}`,
+        mainCharacter: storyData.mainCharacter,
+        setting: storyData.setting,
+        packageType: storyData.packageType,
+        pageCount: storyData.pageCount, // Sayfa sayısını ekledik
+        title: storyData.title
+      };
+      
+      console.log("Hikaye oluşturma isteği gönderiliyor:", {
+        pageCount: storyData.pageCount,
+        packageType: storyData.packageType
+      });
+      
+      // Gerçek API çağrısı
+      const storyResponse = await generateCompleteStory(prompt);
+      
+      // Elde edilen hikaye metnini ve sayfa yapısını kullan
+      setGeneratedText(storyResponse.text);
+      setStoryData(prev => ({ 
+        ...prev, 
+        content: storyResponse.text,
+        coverImage: storyResponse.imageUrl
+      }));
+      
+      // Sayfa yapısını güncelle (varsa)
+      if (storyResponse.pages) {
+        const formattedPages: StoryPage[] = storyResponse.pages.map((page, index) => ({
+          id: uuidv4(),
+          pageNumber: index + 1,
+          content: page.content,
+          imagePrompt: page.imagePrompt,
+          title: index === 0 ? storyData.title : `Sayfa ${index + 1}`,
+          image: page.image,
+          isTitle: page.isTitle
+        }));
+        
+        setStoryData(prev => ({ ...prev, pages: formattedPages }));
+      } else {
+        // Eğer API sayfa yapısı dönmediyse, metni sayfalara böl
+        organizeIntoPages();
+      }
+      
+      toast.success('Hikaye başarıyla oluşturuldu!');
+    } catch (error) {
+      console.error('Hikaye oluşturma hatası:', error);
+      toast.error('Hikaye oluşturulurken bir hata oluştu. Lütfen tekrar deneyin.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Hikaye metnini sayfalara böl
+  const organizeIntoPages = () => {
+    // Hikaye içeriği var mı kontrol et
+    const content = storyData.content || generatedText;
+    if (!content) {
+      toast.error('Hikaye içeriği boş olamaz');
+      return;
+    }
+    
+    // Paket tipine göre sayfa sayısını belirle
+    const pageCount = getPageCountByPackage(storyData.packageType, storyData.pageCount);
+    
+    // Hikayeyi bölmeden önce sayfa başına düşecek kelime sayısını hesapla
+    // Standart kitap formatında her sayfada yaklaşık 60-70 kelime olmalı (çocuk kitabı formatı)
+    const wordsPerPage = 65;
+    
+    // Paragrafları ve cümleleri bul
+    const paragraphs = content.split(/\n\n+/).filter(p => p.trim());
+    // Tüm paragrafları birleştirip cümlelere ayır
+    const allText = paragraphs.join(' ');
+    const sentences = allText.split(/(?<=[.!?])\s+/).filter(s => s.trim());
+    
+    // Sayfa sayısına göre içeriği dengeli bir şekilde dağıt
+    const contentPages = [];
+    // Kapak sayfası hariç sayfa sayısı
+    const contentPageCount = pageCount - 1;
+    
+    // Her sayfaya düşecek cümle sayısını hesapla
+    const sentencesPerPage = Math.max(1, Math.ceil(sentences.length / contentPageCount));
+    
+    // Sayfaları oluştur
+    for (let i = 0; i < contentPageCount; i++) {
+      const startIdx = i * sentencesPerPage;
+      const endIdx = Math.min(startIdx + sentencesPerPage, sentences.length);
+      
+      if (startIdx < sentences.length) {
+        const pageContent = sentences.slice(startIdx, endIdx).join(' ');
+        contentPages.push(pageContent);
+      }
+    }
+    
+    // Sayfa Nesneleri oluştur
+    const pages: StoryPage[] = [];
+    
+    // Kapak sayfası ekle
+    pages.push({
+      id: uuidv4(),
+      pageNumber: 1,
+      title: storyData.title || 'Yeni Hikaye',
+      content: `${storyData.title || 'Yeni Hikaye'}\nYazar: ${storyData.authorName}`,
+      isTitle: true
+    });
+    
+    // İçerik sayfalarını ekle
+    contentPages.forEach((content, idx) => {
+      pages.push({
+        id: uuidv4(),
+        pageNumber: idx + 2, // Kapak sayfası 1, içerik sayfaları 2'den başlar
+        content: content,
+        title: `Sayfa ${idx + 2}`
+      });
+    });
+    
+    // Eğer hedeflenen sayfa sayısına ulaşılmadıysa, boş sayfalar ekle
+    while (pages.length < pageCount) {
+      pages.push({
+        id: uuidv4(),
+        pageNumber: pages.length + 1,
+        content: "",
+        title: `Sayfa ${pages.length + 1}`
+      });
+    }
+    
+    setStoryData(prev => ({ ...prev, pages }));
+    console.log(`Hikaye ${pages.length} sayfaya bölündü. Her sayfada yaklaşık ${wordsPerPage} kelime var.`);
+  };
+
+  // Sayfa için görsel oluştur
+  const generateImageForPage = async (pageIndex: number) => {
+    if (pageIndex < 0 || pageIndex >= storyData.pages.length) {
+      toast.error('Geçersiz sayfa indeksi');
+      return;
+    }
+    
+    const page = storyData.pages[pageIndex];
+    
+    // Yükleme durumunu güncelleyip bildirim göster
+    setIsLoading(true);
+    setCurrentImagePageIndex(pageIndex);
+    showNotification('Görsel oluşturuluyor...', 'info');
+    
+    try {
+      // İlk sayfa ise kapak görseli olarak işaretle
+      const isFirstPage = pageIndex === 0;
+      
+      // Görsel oluşturma prompt'u hazırla
+      const imagePromptText = isFirstPage 
+        ? `Kitap kapağı: ${storyData.title}` 
+        : page.content.substring(0, 200);
+        
+      // Yenilenen API ile görseli oluştur
+      const imageUrl = await generateStoryImage({ 
+        prompt: imagePromptText 
+      });
+      
+      // Sayfayı güncelle
+      const updatedPages = [...storyData.pages];
+      updatedPages[pageIndex] = {
+        ...updatedPages[pageIndex],
+        image: imageUrl,
+        imagePrompt: imagePromptText
+      };
+      
+      setStoryData(prev => ({ 
+        ...prev, 
+        pages: updatedPages,
+        coverImage: isFirstPage ? imageUrl : prev.coverImage
+      }));
+      
+      // Başarı bildirimi göster
+      showNotification(`Sayfa ${pageIndex + 1} için görsel başarıyla oluşturuldu`, 'success');
+    } catch (error) {
+      console.error('Görsel oluşturma hatası:', error);
+      showNotification('Görsel oluşturulurken bir hata oluştu.', 'error');
+    } finally {
+      setIsLoading(false);
+      setCurrentImagePageIndex(-1);
+    }
+  };
+
+  // Hikaye stilini ayarla
+  const setStoryStyle = (style: ThemeStyle) => {
+    setStoryData(prev => ({ ...prev, style }));
+  };
+
+  // Hikayeyi kaydet ve yayınla
+  const publishStory = async () => {
+    if (!user) {
+      toast.error('Hikaye yayınlamak için giriş yapmalısınız');
+      return;
+    }
+    
+    if (!storyData.title) {
+      toast.error('Hikayenize bir başlık vermelisiniz');
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      // Hikayeyi veritabanına kaydet
+      const { data, error } = await supabase
+        .from('stories')
+        .insert({
+          id: storyData.id,
+          title: storyData.title,
+          content: storyData.content,
+          category_id: storyData.category,
+          user_id: user.id,
+          cover_image: storyData.coverImage,
+          status: 'published',
+          audio_enabled: storyData.audioEnabled,
+          style: storyData.style,
+          read_time: Math.ceil(storyData.content.length / 1000) // Tahmini okuma süresi
+        })
+        .select();
+        
+      if (error) throw error;
+      
+      // Sayfaları kaydet
+      const storyPages = storyData.pages.map(page => ({
+        story_id: storyData.id,
+        page_number: page.pageNumber,
+        content: page.content,
+        image_url: page.image,
+        title: page.title
+      }));
+      
+      const { error: pagesError } = await supabase
+        .from('story_pages')
+        .insert(storyPages);
+        
+      if (pagesError) throw pagesError;
+      
+      toast.success('Hikayeniz başarıyla yayınlandı!');
+      setStoryData(prev => ({ ...prev, published: true }));
+      
+      // İsteğe bağlı: Başarılı yayınlamadan sonra ana sayfaya yönlendir
+      // window.location.href = '/';
+    } catch (error) {
+      console.error('Hikaye yayınlama hatası:', error);
+      toast.error('Hikaye yayınlanırken bir hata oluştu.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Form değişikliklerini işle
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setStoryData(prev => ({ ...prev, [name]: value }));
+  };
+
+  // Sayfa içeriğini güncelle
+  const updatePageContent = (pageIndex: number, content: string) => {
+    const updatedPages = [...storyData.pages];
+    updatedPages[pageIndex] = {
+      ...updatedPages[pageIndex],
+      content
+    };
+    
+    setStoryData(prev => ({ ...prev, pages: updatedPages }));
+  };
+
+  // Geçerli adım için içerik oluştur
+  const renderStepContent = () => {
+    switch (currentStep) {
+      case StoryCreationStep.USER_TYPE_SELECTION:
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="max-w-3xl mx-auto p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl"
+          >
+            <h1 className="text-3xl font-bold text-center mb-8">
+              Ne kadar yardıma ihtiyacın var?
+            </h1>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <motion.div
+                whileHover={{ scale: 1.05 }}
+                className="p-6 bg-blue-50 dark:bg-blue-900/20 rounded-xl shadow-md cursor-pointer"
+                onClick={() => setUserType(UserExperienceType.PROFESSIONAL)}
+              >
+                <div className="text-4xl mb-4 text-center">🧙‍♂️</div>
+                <h3 className="text-xl font-bold text-center mb-2">Profesyonelim</h3>
+                <p className="text-gray-600 dark:text-gray-300 text-center">
+                  Kendim yazarım
+                </p>
+              </motion.div>
+              
+              <motion.div
+                whileHover={{ scale: 1.05 }}
+                className="p-6 bg-purple-50 dark:bg-purple-900/20 rounded-xl shadow-md cursor-pointer"
+                onClick={() => setUserType(UserExperienceType.GUIDED)}
+              >
+                <div className="text-4xl mb-4 text-center">🧑‍💻</div>
+                <h3 className="text-xl font-bold text-center mb-2">Yönlendirme İsterim</h3>
+                <p className="text-gray-600 dark:text-gray-300 text-center">
+                  Birlikte yazalım
+                </p>
+              </motion.div>
+              
+              <motion.div
+                whileHover={{ scale: 1.05 }}
+                className="p-6 bg-green-50 dark:bg-green-900/20 rounded-xl shadow-md cursor-pointer"
+                onClick={() => setUserType(UserExperienceType.NOVICE)}
+              >
+                <div className="text-4xl mb-4 text-center">🧸</div>
+                <h3 className="text-xl font-bold text-center mb-2">Sıfırdan Yardım</h3>
+                <p className="text-gray-600 dark:text-gray-300 text-center">
+                  Sadece fikrim var
+                </p>
+              </motion.div>
+            </div>
+          </motion.div>
+        );
+        
+      case StoryCreationStep.IDEA_CREATION:
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="max-w-5xl mx-auto p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl"
+          >
+            <h1 className="text-3xl font-bold mb-6">Hikaye Fikriniz</h1>
+            
+            <div className="mb-6 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-gray-700 dark:text-gray-300">
+              <p>Hikayenizin ana hatlarını belirleyin. Bu bilgiler hikayenizin temelini oluşturacak.</p>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <div className="mb-5">
+                  <label htmlFor="title" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Hikaye Başlığı <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="title"
+                    value={storyData.title}
+                    onChange={(e) => setStoryData(prev => ({ ...prev, title: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors dark:bg-gray-700 dark:text-white"
+                    placeholder="Örn: Ayşe'nin Orman Macerası"
+                    required
+                  />
+                </div>
+                
+                <div className="mb-5">
+                  <label htmlFor="main-character" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Ana Karakter <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="main-character"
+                    value={storyData.mainCharacter}
+                    onChange={(e) => setStoryData(prev => ({ ...prev, mainCharacter: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors dark:bg-gray-700 dark:text-white"
+                    placeholder="Örn: Küçük Ayşe"
+                    required
+                  />
+                </div>
+                
+                <div className="mb-5">
+                  <label htmlFor="setting" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Mekan/Ortam <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="setting"
+                    value={storyData.setting}
+                    onChange={(e) => setStoryData(prev => ({ ...prev, setting: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors dark:bg-gray-700 dark:text-white"
+                    placeholder="Örn: Büyülü bir orman"
+                    required
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <div className="mb-5">
+                  <label htmlFor="problem" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Problem/Çatışma <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    id="problem"
+                    value={storyData.problem}
+                    onChange={(e) => setStoryData(prev => ({ ...prev, problem: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors dark:bg-gray-700 dark:text-white"
+                    placeholder="Örn: Yolunu kaybetmek"
+                    required
+                  />
+                </div>
+                
+                <div className="mb-5">
+                  <label htmlFor="story-idea" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Hikaye Fikri <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    id="story-idea"
+                    value={storyData.storyIdea}
+                    onChange={(e) => setStoryData(prev => ({ ...prev, storyIdea: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors dark:bg-gray-700 dark:text-white min-h-[120px]"
+                    placeholder="Örn: Küçük Ayşe ormanda gezintiye çıkar ve yolunu kaybeder. Yeni arkadaşlar edinir ve onların yardımıyla evine geri döner."
+                    required
+                  />
+                </div>
+                
+                <div className="mb-5">
+                  <label htmlFor="page-count" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Sayfa Sayısı
+                  </label>
+                  <div className="flex items-center">
+                    <input
+                      type="range"
+                      id="page-count"
+                      min="4"
+                      max={storyData.packageType === AIServicePackageType.PREMIUM1 ? "12" : storyData.packageType === AIServicePackageType.PLUS ? "20" : "6"}
+                      value={storyData.pageCount || 6}
+                      onChange={(e) => setStoryData(prev => ({ ...prev, pageCount: parseInt(e.target.value) }))}
+                      className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <span className="ml-3 text-sm text-gray-700 dark:text-gray-300 min-w-[30px]">
+                      {storyData.pageCount || 6}
+                    </span>
+                  </div>
+                  <div className="flex justify-between mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    <span>4</span>
+                    <span>{storyData.packageType === AIServicePackageType.PREMIUM1 ? "12" : storyData.packageType === AIServicePackageType.PLUS ? "20" : "6"}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-8 flex justify-between">
+              <button
+                onClick={goToPreviousStep}
+                className="px-6 py-3 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Geri
+              </button>
+              <button
+                onClick={goToNextStep}
+                disabled={!storyData.title || !storyData.mainCharacter || !storyData.setting || !storyData.problem || !storyData.storyIdea}
+                className={`px-6 py-3 rounded-lg ${
+                  !storyData.title || !storyData.mainCharacter || !storyData.setting || !storyData.problem || !storyData.storyIdea
+                    ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700'
+                } transition-colors`}
+              >
+                İleri
+              </button>
+            </div>
+          </motion.div>
+        );
+      
+      case StoryCreationStep.STORY_WRITING:
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="max-w-5xl mx-auto p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl"
+          >
+            <h1 className="text-3xl font-bold mb-6">Hikaye Oluşturma</h1>
+            
+            <div className="mb-6 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-gray-700 dark:text-gray-300">
+              <p>Hikaye oluşturma işlemi için aşağıdaki butona tıklayın. Oluşturma işlemi bittikten sonra hikayeleri düzenleme ekranına geçebilirsiniz.</p>
+            </div>
+            
+            <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 mb-6 bg-gray-50 dark:bg-gray-900">
+              <h2 className="text-xl font-semibold mb-4">Hikaye Detayları</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-3 bg-white dark:bg-gray-800 rounded-lg">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Başlık</p>
+                  <p className="font-medium">{storyData.title}</p>
+                </div>
+                <div className="p-3 bg-white dark:bg-gray-800 rounded-lg">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Ana Karakter</p>
+                  <p className="font-medium">{storyData.mainCharacter}</p>
+                </div>
+                <div className="p-3 bg-white dark:bg-gray-800 rounded-lg">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Mekan</p>
+                  <p className="font-medium">{storyData.setting}</p>
+                </div>
+                <div className="p-3 bg-white dark:bg-gray-800 rounded-lg">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Problem</p>
+                  <p className="font-medium">{storyData.problem}</p>
+                </div>
+                <div className="p-3 bg-white dark:bg-gray-800 rounded-lg md:col-span-2">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Hikaye Fikri</p>
+                  <p className="font-medium">{storyData.storyIdea}</p>
+                </div>
+                <div className="p-3 bg-white dark:bg-gray-800 rounded-lg">
+                  <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Sayfa Sayısı</p>
+                  <p className="font-medium">{storyData.pageCount || 6} sayfa</p>
+                </div>
+              </div>
+            </div>
+            
+            {!isGenerating && !storyData.content ? (
+              <div className="flex justify-center my-10">
+                <button
+                  onClick={generateStoryFromIdea}
+                  className="px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 transition-colors flex items-center text-lg font-medium"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                  Hikaye Oluştur
+                </button>
+              </div>
+            ) : isGenerating ? (
+              <div className="text-center my-10">
+                <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500 mb-4"></div>
+                <h3 className="text-lg font-medium mb-2">Hikayeniz Oluşturuluyor</h3>
+                <p className="text-gray-600 dark:text-gray-400">Bu işlem biraz zaman alabilir, lütfen bekleyin...</p>
+              </div>
+            ) : (
+              <div className="my-10">
+                <h2 className="text-xl font-semibold mb-4">Hikayeniz Hazır</h2>
+                <div className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-green-200 dark:border-green-800">
+                  <div className="max-h-60 overflow-y-auto mb-4 prose dark:prose-invert prose-sm">
+                    <p>{storyData.content.substring(0, 500)}...</p>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-500 dark:text-gray-400">Yaklaşık {storyData.pages.length} sayfa, {Math.ceil(storyData.content.length / 1000)} dk. okuma süresi</span>
+                    <button 
+                      onClick={() => setShowFullPreview(true)}
+                      className="px-4 py-2 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-lg flex items-center text-sm font-medium hover:bg-blue-200 dark:hover:bg-blue-800/30 transition-colors"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      Tam Önizleme
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            <div className="mt-8 flex justify-between">
+              <button
+                onClick={goToPreviousStep}
+                className="px-6 py-3 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Geri
+              </button>
+              <button
+                onClick={goToNextStep}
+                disabled={!storyData.content || storyData.pages.length === 0}
+                className={`px-6 py-3 rounded-lg ${
+                  !storyData.content || storyData.pages.length === 0
+                    ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-blue-500 to-purple-600 text-white hover:from-blue-600 hover:to-purple-700'
+                } transition-colors`}
+              >
+                İleri
+              </button>
+            </div>
+            
+            {showFullPreview && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
+                <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                  <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-semibold">Hikaye Önizleme</h3>
+                    <button 
+                      onClick={() => setShowFullPreview(false)}
+                      className="text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="flex-grow overflow-y-auto p-4">
+                    <div className="prose dark:prose-invert max-w-none">
+                      {storyData.pages.map((page, index) => (
+                        <div key={page.id} className="mb-8 pb-8 border-b border-gray-100 dark:border-gray-800">
+                          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                            {index === 0 ? 'Kapak Sayfası' : `Sayfa ${index}`}
+                          </h3>
+                          <p className="whitespace-pre-wrap">{page.content}</p>
+                          {page.image && (
+                            <img 
+                              src={page.image} 
+                              alt={`Sayfa ${index} görseli`}
+                              className="mt-4 rounded-lg max-h-40 object-cover"
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        );
+      
+      case StoryCreationStep.IMAGE_CREATION:
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="max-w-5xl mx-auto p-4 md:p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl"
+          >
+            <h1 className="text-2xl md:text-3xl font-bold mb-4 md:mb-6">Görseller</h1>
+            
+            <div className="mb-4 md:mb-6 p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg text-sm text-gray-700 dark:text-gray-300">
+              <p>Her sayfa için görsel oluşturun. Kapak sayfası ve hikaye sayfaları için görseller otomatik oluşturulabilir.</p>
+            </div>
+            
+            {/* Toplu görsel oluşturma butonu */}
+            <div className="mb-6">
+              <button
+                onClick={async () => {
+                  if (storyData.pages.length === 0) {
+                    toast.error('Hikaye sayfaları oluşturulmamış');
+                    return;
+                  }
+                  
+                  setIsLoading(true);
+                  showNotification('Tüm görseller oluşturuluyor...', 'info');
+                  
+                  try {
+                    // Kitap kapağı için öncelikle görsel oluştur
+                    if (!storyData.pages[0].image) {
+                      await generateImageForPage(0);
+                    }
+                    
+                    // Diğer sayfalar için görselleri oluştur (kapak sayfası hariç)
+                    for (let i = 1; i < storyData.pages.length; i++) {
+                      if (!storyData.pages[i].image) {
+                        await generateImageForPage(i);
+                        // Sıralı işlem olduğu için ufak bekletme
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                      }
+                    }
+                    
+                    showNotification('Tüm görseller başarıyla oluşturuldu!', 'success');
+                  } catch (error) {
+                    console.error('Görsel oluşturma hatası:', error);
+                    showNotification('Bazı görseller oluşturulamadı.', 'error');
+                  } finally {
+                    setIsLoading(false);
+                    setCurrentImagePageIndex(-1);
+                  }
+                }}
+                disabled={isLoading}
+                className="w-full py-3 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg hover:from-purple-600 hover:to-blue-600 transition-colors disabled:opacity-50 flex items-center justify-center"
+              >
+                {isLoading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Görseller Oluşturuluyor...
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Tüm Görselleri Otomatik Oluştur
+                  </>
+                )}
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+              {storyData.pages.map((page, index) => (
+                <div key={page.id} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                  <div className="bg-gray-100 dark:bg-gray-800 px-4 py-3 flex justify-between items-center">
+                    <h3 className="font-medium text-sm md:text-base">
+                      {index === 0 ? 'Kapak Görseli' : `Sayfa ${index} Görseli`}
+                    </h3>
+                    {page.image && (
+                      <div className="flex items-center space-x-2">
+                        <button
+                          className="text-xs text-blue-500 hover:text-blue-700"
+                          onClick={() => {
+                            // Görsel önizleme fonksiyonu (burada basit bir alert gösteriyoruz)
+                            window.open(page.image, '_blank');
+                          }}
+                        >
+                          Önizle
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="p-4">
+                    {page.image ? (
+                      <div className="relative">
+                        <img 
+                          src={page.image} 
+                          alt={`Sayfa ${index}`}
+                          className="w-full h-48 object-cover rounded-lg"
+                        />
+                        <div className="absolute bottom-2 right-2 flex space-x-2">
+                          <button
+                            onClick={() => generateImageForPage(index)}
+                            disabled={isLoading}
+                            className="p-2 bg-purple-500 text-white rounded-full shadow-md hover:bg-purple-600 transition-colors disabled:opacity-50"
+                            title="Yeni görsel oluştur"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => {
+                              const updatedPages = [...storyData.pages];
+                              updatedPages[index] = {
+                                ...updatedPages[index],
+                                image: undefined
+                              };
+                              setStoryData(prev => ({ 
+                                ...prev, 
+                                pages: updatedPages,
+                                // Kapak görseli silindiyse coverImage'ı da temizle
+                                coverImage: index === 0 ? undefined : prev.coverImage
+                              }));
+                              showNotification('Görsel kaldırıldı', 'info');
+                            }}
+                            className="p-2 bg-red-500 text-white rounded-full shadow-md hover:bg-red-600 transition-colors"
+                            title="Görseli kaldır"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="relative w-full h-48 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center justify-center">
+                          {isLoading && currentImagePageIndex === index ? (
+                            <div className="flex flex-col items-center justify-center">
+                              <svg className="animate-spin h-8 w-8 text-purple-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              <p className="mt-2 text-sm text-purple-500">Görsel oluşturuluyor...</p>
+                            </div>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                          )}
+                        </div>
+                        
+                        <div className="flex flex-col space-y-2">
+                          <textarea
+                            value={page.imagePrompt || ''}
+                            onChange={(e) => {
+                              const updatedPages = [...storyData.pages];
+                              updatedPages[index] = {
+                                ...updatedPages[index],
+                                imagePrompt: e.target.value
+                              };
+                              setStoryData(prev => ({ ...prev, pages: updatedPages }));
+                            }}
+                            placeholder="Görsel için açıklama yazın..."
+                            rows={2}
+                            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-purple-500 transition-colors dark:bg-gray-700 dark:text-white"
+                          />
+                          
+                          <button
+                            onClick={() => {
+                              // pageIndex değişkenini ayarla
+                              setCurrentImagePageIndex(index);
+                              generateImageForPage(index);
+                            }}
+                            disabled={isLoading}
+                            className="w-full py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg hover:from-purple-600 hover:to-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                          >
+                            {isLoading && currentImagePageIndex === index ? (
+                              <>
+                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Oluşturuluyor...
+                              </>
+                            ) : (
+                              'AI ile Görsel Oluştur'
+                            )}
+                          </button>
+                          
+                          <div className="flex items-center">
+                            <hr className="flex-grow border-gray-200 dark:border-gray-700" />
+                            <span className="mx-2 text-xs text-gray-500 dark:text-gray-400">veya</span>
+                            <hr className="flex-grow border-gray-200 dark:border-gray-700" />
+                          </div>
+                          
+                          <label
+                            className="w-full py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-center cursor-pointer text-sm"
+                          >
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                  const file = e.target.files[0];
+                                  if (file.size > 5 * 1024 * 1024) {
+                                    showNotification('Dosya boyutu 5MB\'dan küçük olmalıdır', 'error');
+                                    return;
+                                  }
+                                  
+                                  const reader = new FileReader();
+                                  reader.onloadend = () => {
+                                    const updatedPages = [...storyData.pages];
+                                    updatedPages[index] = {
+                                      ...updatedPages[index],
+                                      image: reader.result as string
+                                    };
+                                    setStoryData(prev => ({ 
+                                      ...prev, 
+                                      pages: updatedPages,
+                                      coverImage: index === 0 ? reader.result as string : prev.coverImage
+                                    }));
+                                    showNotification('Görsel başarıyla yüklendi', 'success');
+                                  };
+                                  reader.readAsDataURL(file);
+                                }
+                              }}
+                            />
+                            Dosyadan Yükle
+                          </label>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            <div className="mt-6 md:mt-8 flex justify-between">
+              <button
+                onClick={goToPreviousStep}
+                className="px-4 md:px-6 py-2 md:py-3 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Geri
+              </button>
+              
+              <button
+                onClick={goToNextStep}
+                className="px-4 md:px-6 py-2 md:py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                İleri
+              </button>
+            </div>
+          </motion.div>
+        );
+      
+      case StoryCreationStep.STYLE_SELECTION:
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="max-w-5xl mx-auto p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl"
+          >
+            <h1 className="text-3xl font-bold mb-6">Stil ve Düzen</h1>
+            
+            <div className="mb-6 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-gray-700 dark:text-gray-300">
+              <p>Hikayenizin görsel stilini ve sayfa düzenini seçin. Bu seçimler hikayenizin genel atmosferini belirler.</p>
+            </div>
+            
+            <div className="space-y-8">
+              <div>
+                <h2 className="text-xl font-semibold mb-4">Tema Seçimi</h2>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <StyleThemeCard
+                    theme="children"
+                    title="Çocuk Masalı"
+                    description="Renkli ve canlı, çocuklara yönelik sevimli bir düzen"
+                    icon={
+                      <img src="https://cdn-icons-png.flaticon.com/512/2827/2827462.png" alt="Çocuk Masalı" className="w-14 h-14" />
+                    }
+                    isSelected={storyData.style === ThemeStyle.CHILDREN}
+                    onClick={() => setStoryStyle(ThemeStyle.CHILDREN)}
+                    preview={
+                      <div className="text-xs p-2 rounded bg-white/30">
+                        <p className="font-comic">Hikayenizde yazılar bu şekilde görünecektir.</p>
+                      </div>
+                    }
+                  />
+                  
+                  <StyleThemeCard
+                    theme="modern"
+                    title="Modern"
+                    description="Temiz ve sade, zarif bir tasarım"
+                    icon={
+                      <img src="https://cdn-icons-png.flaticon.com/512/2736/2736913.png" alt="Modern" className="w-14 h-14" />
+                    }
+                    isSelected={storyData.style === ThemeStyle.MODERN}
+                    onClick={() => setStoryStyle(ThemeStyle.MODERN)}
+                    preview={
+                      <div className="text-xs p-2 rounded bg-white/30">
+                        <p className="font-sans">Hikayenizde yazılar bu şekilde görünecektir.</p>
+                      </div>
+                    }
+                  />
+                  
+                  <StyleThemeCard
+                    theme="fantasy"
+                    title="Fantastik"
+                    description="Büyülü, masalsı ve hayal gücünü zorlayan bir tema"
+                    icon={
+                      <img src="https://cdn-icons-png.flaticon.com/512/8927/8927200.png" alt="Fantastik" className="w-14 h-14" />
+                    }
+                    isSelected={storyData.style === ThemeStyle.FANTASY}
+                    onClick={() => setStoryStyle(ThemeStyle.FANTASY)}
+                    preview={
+                      <div className="text-xs p-2 rounded bg-white/30">
+                        <p className="font-serif italic">Hikayenizde yazılar bu şekilde görünecektir.</p>
+                      </div>
+                    }
+                  />
+                  
+                  <StyleThemeCard
+                    theme="adventure"
+                    title="Macera"
+                    description="Heyecanlı, dinamik ve merak uyandıran bir düzen"
+                    icon={
+                      <img src="https://cdn-icons-png.flaticon.com/512/8284/8284334.png" alt="Macera" className="w-14 h-14" />
+                    }
+                    isSelected={storyData.style === ThemeStyle.ADVENTURE}
+                    onClick={() => setStoryStyle(ThemeStyle.ADVENTURE)}
+                    preview={
+                      <div className="text-xs p-2 rounded bg-white/30">
+                        <p className="font-mono">Hikayenizde yazılar bu şekilde görünecektir.</p>
+                      </div>
+                    }
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <h2 className="text-xl font-semibold mb-4">Kapak Stili</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <CoverStyleCard 
+                    title="Açık" 
+                    description="Açık renkli, sade ve modern tasarım" 
+                    theme="light"
+                    isSelected={storyData.coverStyle === "light"}
+                    onClick={() => setStoryData(prev => ({ ...prev, coverStyle: "light" }))}
+                  />
+                  <CoverStyleCard 
+                    title="Koyu" 
+                    description="Koyu renkli, ciddi ve zarif tasarım" 
+                    theme="dark"
+                    isSelected={storyData.coverStyle === "dark"}
+                    onClick={() => setStoryData(prev => ({ ...prev, coverStyle: "dark" }))}
+                  />
+                  <CoverStyleCard 
+                    title="Renkli" 
+                    description="Canlı ve dikkat çekici renkli kapak" 
+                    theme="colorful"
+                    isSelected={storyData.coverStyle === "colorful" || !storyData.coverStyle}
+                    onClick={() => setStoryData(prev => ({ ...prev, coverStyle: "colorful" }))}
+                  />
+                </div>
+              </div>
+              
+              <div>
+                <h2 className="text-xl font-semibold mb-4">Sayfa Düzeni</h2>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <PageLayoutCard 
+                    title="Klasik Düzen" 
+                    description="Resim üstte, metin altta olan geleneksel düzen" 
+                    layout={TemplateType.CLASSIC}
+                    isSelected={storyData.pageLayout === TemplateType.CLASSIC || !storyData.pageLayout}
+                    onClick={() => setStoryData(prev => ({ ...prev, pageLayout: TemplateType.CLASSIC }))}
+                  />
+                  <PageLayoutCard 
+                    title="Yan Yana Düzen" 
+                    description="Resim ve metin yan yana düzenlenir" 
+                    layout={TemplateType.VISUAL_TEXT}
+                    isSelected={storyData.pageLayout === TemplateType.VISUAL_TEXT}
+                    onClick={() => setStoryData(prev => ({ ...prev, pageLayout: TemplateType.VISUAL_TEXT }))}
+                  />
+                  <PageLayoutCard 
+                    title="Panoramik Düzen" 
+                    description="Tam sayfa resim üzerinde metin içeren modern düzen" 
+                    layout={TemplateType.PANORAMIC}
+                    isSelected={storyData.pageLayout === TemplateType.PANORAMIC}
+                    onClick={() => setStoryData(prev => ({ ...prev, pageLayout: TemplateType.PANORAMIC }))}
+                  />
+                </div>
+                
+                <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <h3 className="font-medium mb-2 text-blue-700 dark:text-blue-300">Sayfa Düzeni Önizlemesi</h3>
+                  <div className="bg-white dark:bg-gray-700 rounded-lg p-2 aspect-square max-w-xs">
+                    {/* Düzen önizlemesi - Seçilen düzen tipine göre */}
+                    {storyData.pageLayout === TemplateType.VISUAL_TEXT ? (
+                      <div className="flex h-full">
+                        <div className="w-1/2 h-full bg-blue-100 dark:bg-blue-800/30 rounded-l-lg flex items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <div className="w-1/2 h-full p-2">
+                          <div className="w-full h-2 bg-gray-200 dark:bg-gray-600 rounded mb-1"></div>
+                          <div className="w-3/4 h-2 bg-gray-200 dark:bg-gray-600 rounded mb-3"></div>
+                          <div className="w-full h-1 bg-gray-200 dark:bg-gray-600 rounded mb-1"></div>
+                          <div className="w-full h-1 bg-gray-200 dark:bg-gray-600 rounded mb-1"></div>
+                          <div className="w-4/5 h-1 bg-gray-200 dark:bg-gray-600 rounded"></div>
+                        </div>
+                      </div>
+                    ) : storyData.pageLayout === TemplateType.PANORAMIC ? (
+                      <div className="relative h-full w-full overflow-hidden rounded-lg">
+                        <div className="absolute inset-0 bg-blue-100 dark:bg-blue-800/30 flex items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-white/90 dark:bg-gray-800/90">
+                          <div className="w-4/5 h-2 bg-gray-200 dark:bg-gray-600 rounded mb-1"></div>
+                          <div className="w-full h-1 bg-gray-200 dark:bg-gray-600 rounded mb-1"></div>
+                          <div className="w-2/3 h-1 bg-gray-200 dark:bg-gray-600 rounded"></div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col h-full">
+                        <div className="h-1/2 bg-blue-100 dark:bg-blue-800/30 rounded-t-lg flex items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                        <div className="h-1/2 p-2">
+                          <div className="w-full h-2 bg-gray-200 dark:bg-gray-600 rounded mb-1"></div>
+                          <div className="w-4/5 h-2 bg-gray-200 dark:bg-gray-600 rounded mb-3"></div>
+                          <div className="w-full h-1 bg-gray-200 dark:bg-gray-600 rounded mb-1"></div>
+                          <div className="w-full h-1 bg-gray-200 dark:bg-gray-600 rounded mb-1"></div>
+                          <div className="w-4/5 h-1 bg-gray-200 dark:bg-gray-600 rounded"></div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">Seçilen sayfa düzeni: <strong>{storyData.pageLayout === TemplateType.CLASSIC ? "Klasik Düzen" : storyData.pageLayout === TemplateType.VISUAL_TEXT ? "Yan Yana Düzen" : "Panoramik Düzen"}</strong></p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex justify-between mt-12">
+              <button
+                onClick={goToPreviousStep}
+                className="px-6 py-3 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Geri
+              </button>
+              <button
+                onClick={goToNextStep}
+                className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-lg hover:from-blue-600 hover:to-purple-700 transition-colors"
+              >
+                Önizleme ve Yayınlama
+              </button>
+            </div>
+          </motion.div>
+        );
+      
+      case StoryCreationStep.PREVIEW_PUBLISH:
+        return (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="max-w-6xl mx-auto p-4 sm:p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl"
+          >
+            <h1 className="text-2xl sm:text-3xl font-bold mb-6">Önizleme ve Yayınlama</h1>
+            
+            <div className="mb-6 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-gray-700 dark:text-gray-300">
+              <p>Hikayenizi yayınladığınızda, StoryVista platformunda herkese açık olarak görüntülenecek ve paylaşılabilecektir.</p>
+            </div>
+            
+            <div className="flex flex-col lg:flex-row gap-8">
+              <div className="lg:w-2/3 space-y-6">
+                <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl relative">
+                  <h2 className="text-xl font-semibold mb-4 flex items-center justify-between">
+                    <span>Kitap Önizleme</span>
+                    <FullBookPreview pages={storyData.pages} title={storyData.title} authorName={storyData.authorName} coverImage={storyData.coverImage} />
+                  </h2>
+                  
+                  {storyData.pages.length > 0 ? (
+                    <div className="flex flex-col space-y-8">
+                      {storyData.pages.map((page, index) => (
+                        <div key={page.id} className="w-full">
+                          <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                            {index === 0 ? 'Kapak Sayfası' : `Sayfa ${index}`}
+                          </h3>
+                          <BookPage 
+                            page={{
+                              id: page.id,
+                              pageNumber: page.pageNumber,
+                              content: page.content,
+                              image: page.image,
+                              title: page.title,
+                              isTitle: index === 0, // İlk sayfa kapak sayfasıdır
+                              template: index === 0 ? undefined : storyData.pageLayout || TemplateType.CLASSIC
+                            }}
+                            isCoverPage={index === 0}
+                            bookTitle={storyData.title}
+                            authorName={storyData.authorName}
+                            coverImage={index === 0 ? storyData.coverImage : undefined}
+                            showFlipButtons={true}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center p-8 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-gray-400 dark:text-gray-600 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                      </svg>
+                      <p className="text-gray-600 dark:text-gray-400">Henüz sayfa eklenmemiş. Bir önceki adıma geri dönüp hikaye oluşturun.</p>
+                    </div>
+                  )}
+                  
+                  <div className="mt-4 flex flex-wrap justify-end gap-2">
+                    <button 
+                      className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center text-sm"
+                      onClick={async () => {
+                        const success = await generateAudio(storyData.content);
+                        if (success) {
+                          setStoryData(prev => ({ ...prev, audioEnabled: true }));
+                        }
+                      }}
+                      disabled={isLoading || storyData.audioEnabled}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.536a5 5 0 017.072 0m-9.9-2.828a9 9 0 0112.728 0" />
+                      </svg>
+                      {storyData.audioEnabled ? "Ses Dosyası Hazır" : "Sesli Versiyon Oluştur"}
+                    </button>
+                    <button 
+                      className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center text-sm"
+                      onClick={() => {
+                        showNotification('3D önizleme hazırlanıyor...', 'info');
+                        setTimeout(() => {
+                          showNotification('3D önizleme şu anda geliştirme aşamasındadır', 'warning');
+                        }, 1500);
+                      }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      3D Görünüm
+                    </button>
+                    <button 
+                      className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center text-sm"
+                      onClick={() => {
+                        showNotification('Tam ekran önizleme hazırlanıyor...', 'info');
+                        setTimeout(() => {
+                          showNotification('Tam ekran önizleme şu anda geliştirme aşamasındadır', 'warning');
+                        }, 1500);
+                      }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                      Tam Önizleme
+                    </button>
+                  </div>
+                </div>
+                
+                <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl">
+                  <h2 className="text-xl font-semibold mb-4">Sayfa Önizlemeleri</h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {storyData.pages.map((page, index) => (
+                      <div key={page.id} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            </div>
+            <div className="text-sm text-gray-700 dark:text-gray-300 p-2 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+              {assistantMessage}
+            </div>
+            
+            {storyData.userType === UserExperienceType.NOVICE && currentStep === StoryCreationStep.IDEA_CREATION && (
+              <div className="mt-2 flex flex-col space-y-2">
+                <button
+                  onClick={() => {
+                    const ideas = [
+                      'Uzak bir gezegende kolonileşme çalışmaları yapan bir ekibin, beklenmedik bir keşfi',
+                      'Kaybolan bir hazinenin peşinde maceraya atılan iki yakın arkadaşın hikayesi',
+                      'Büyülü güçlere sahip olduğunu keşfeden sıradan bir lise öğrencisinin değişen hayatı',
+                      'Zamanda yolculuk yapabilen bir araç geliştiren yaşlı bir mucit ve torununun macerası'
+                    ];
+                    
+                    setStoryData(prev => ({
+                      ...prev,
+                      storyIdea: ideas[Math.floor(Math.random() * ideas.length)]
+                    }));
+                    
+                    setAssistantMessage('İşte size bir fikir önerdim! Beğenmediyseniz, "Fikir Öner" butonuna tekrar tıklayabilir veya kendi fikrinizi yazabilirsiniz.');
+                  }}
+                  className="text-xs px-3 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg hover:from-purple-600 hover:to-blue-600 transition-colors"
+                >
+                  Fikir Öner
+                </button>
+              </div>
+            )}
+            
+            {storyData.userType === UserExperienceType.GUIDED && currentStep === StoryCreationStep.STORY_WRITING && (
+              <div className="mt-2 flex flex-col space-y-2">
+                <button
+                  onClick={() => {
+                    const suggestions = [
+                      'Hikayenize heyecan verici bir olay ekleyerek akışı hızlandırabilirsiniz.',
+                      'Ana karakterinizin geçmişinden bir anıyı dahil ederek derinlik katabilirsiniz.',
+                      'Beklenmedik bir zorluk veya engel ekleyerek gerilimi artırabilirsiniz.',
+                      'İkinci bir bakış açısı ekleyerek hikayeyi zenginleştirebilirsiniz.'
+                    ];
+                    
+                    setAssistantMessage(suggestions[Math.floor(Math.random() * suggestions.length)]);
+                  }}
+                  className="text-xs px-3 py-2 bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-lg hover:from-purple-600 hover:to-blue-600 transition-colors"
+                >
+                  Öneri Al
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    );
+  };
+
+  // Bildirim bileşeni
+  const Notification = () => {
+    if (!notificationMessage) return null;
+    
+    const getBackgroundColor = () => {
+      switch(notificationMessage.type) {
+        case 'success': return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
+        case 'error': return 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
+        case 'warning': return 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800';
+        default: return 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800';
+      }
+    };
+    
+    const getIconColor = () => {
+      switch(notificationMessage.type) {
+        case 'success': return 'text-green-500 dark:text-green-400';
+        case 'error': return 'text-red-500 dark:text-red-400';
+        case 'warning': return 'text-amber-500 dark:text-amber-400';
+        default: return 'text-blue-500 dark:text-blue-400';
+      }
+    };
+    
+    const getIcon = () => {
+      switch(notificationMessage.type) {
+        case 'success':
+          return (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          );
+        case 'error':
+          return (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          );
+        case 'warning':
+          return (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          );
+        default:
+          return (
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          );
+      }
+    };
+    
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        className={`fixed top-4 right-4 left-4 md:left-auto md:w-96 z-50 p-4 rounded-lg shadow-lg border ${getBackgroundColor()} transform transition-all duration-300`}
+      >
+        <div className="flex items-start">
+          <div className={`mr-3 flex-shrink-0 ${getIconColor()}`}>
+            {getIcon()}
+          </div>
+          <div className="flex-grow">
+            <p className="text-sm text-gray-700 dark:text-gray-300">
+              {notificationMessage.text}
+            </p>
+          </div>
+          <button 
+            onClick={() => setNotificationMessage(null)}
+            className="ml-3 flex-shrink-0 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="w-full bg-white dark:bg-gray-800 h-1 rounded-full mt-2 overflow-hidden">
+          <motion.div
+            initial={{ width: '100%' }}
+            animate={{ width: '0%' }}
+            transition={{ duration: 3, ease: 'linear' }}
+            className={`h-full ${
+              notificationMessage.type === 'success' ? 'bg-green-500' : 
+              notificationMessage.type === 'error' ? 'bg-red-500' : 
+              notificationMessage.type === 'warning' ? 'bg-amber-500' : 
+              'bg-blue-500'
+            }`}
+            onAnimationComplete={() => setNotificationMessage(null)}
+          />
+        </div>
+      </motion.div>
+    );
+  };
+
+  // Yardımcı fonksiyonlar
+  const showNotification = (text: string, type: 'info' | 'success' | 'error' | 'warning') => {
+    // Eğer zaten bir bildirim gösteriliyorsa, önce onu kapat
+    setNotificationMessage(null);
+    
+    // Timeout ile daha sonra yeni bildirimi göster (animasyon için)
+    setTimeout(() => {
+      setNotificationMessage({ text, type });
+    }, 100);
+  };
+
+  // Önizleme-yayınlama ekranını güncelliyoruz 
+  const renderPreviewPublishStep = () => {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
+        className="max-w-6xl mx-auto p-4 sm:p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl"
+      >
+        <h1 className="text-2xl sm:text-3xl font-bold mb-6">Önizleme ve Yayınlama</h1>
+        
+        <div className="mb-6 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-sm text-gray-700 dark:text-gray-300">
+          <p>Hikayenizi yayınladığınızda, StoryVista platformunda herkese açık olarak görüntülenecek ve paylaşılabilecektir.</p>
+        </div>
+        
+        <div className="flex flex-col lg:flex-row gap-8">
+          <div className="lg:w-2/3 space-y-6">
+            <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl relative">
+              <h2 className="text-xl font-semibold mb-4 flex items-center justify-between">
+                <span>Kitap Önizleme</span>
+                <FullBookPreview pages={storyData.pages} title={storyData.title} authorName={storyData.authorName} coverImage={storyData.coverImage} />
+              </h2>
+              
+              {storyData.pages.length > 0 ? (
+                <div className="flex flex-col space-y-8">
+                  {storyData.pages.map((page, index) => (
+                    <div key={page.id} className="w-full">
+                      <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
+                        {index === 0 ? 'Kapak Sayfası' : `Sayfa ${index}`}
+                      </h3>
+                      <BookPage 
+                        page={{
+                          id: page.id,
+                          pageNumber: page.pageNumber,
+                          content: page.content,
+                          image: page.image,
+                          title: page.title,
+                          isTitle: index === 0, // İlk sayfa kapak sayfasıdır
+                          template: index === 0 ? undefined : storyData.pageLayout || TemplateType.CLASSIC
+                        }}
+                        isCoverPage={index === 0}
+                        bookTitle={storyData.title}
+                        authorName={storyData.authorName}
+                        coverImage={index === 0 ? storyData.coverImage : undefined}
+                        showFlipButtons={true}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center p-8 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-gray-400 dark:text-gray-600 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  </svg>
+                  <p className="text-gray-600 dark:text-gray-400">Henüz sayfa eklenmemiş. Bir önceki adıma geri dönüp hikaye oluşturun.</p>
+                </div>
+              )}
+              
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <button 
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center text-sm"
+                  onClick={async () => {
+                    const success = await generateAudio(storyData.content);
+                    if (success) {
+                      setStoryData(prev => ({ ...prev, audioEnabled: true }));
+                    }
+                  }}
+                  disabled={isLoading || storyData.audioEnabled}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.536a5 5 0 017.072 0m-9.9-2.828a9 9 0 0112.728 0" />
+                  </svg>
+                  {storyData.audioEnabled ? "Ses Dosyası Hazır" : "Sesli Versiyon Oluştur"}
+                </button>
+                <button 
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center text-sm"
+                  onClick={() => {
+                    showNotification('3D önizleme hazırlanıyor...', 'info');
+                    setTimeout(() => {
+                      showNotification('3D önizleme şu anda geliştirme aşamasındadır', 'warning');
+                    }, 1500);
+                  }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  3D Görünüm
+                </button>
+                <button 
+                  className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg flex items-center text-sm"
+                  onClick={() => {
+                    showNotification('Tam ekran önizleme hazırlanıyor...', 'info');
+                    setTimeout(() => {
+                      showNotification('Tam ekran önizleme şu anda geliştirme aşamasındadır', 'warning');
+                    }, 1500);
+                  }}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  Tam Önizleme
+                </button>
+              </div>
+            </div>
+            
+            <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl">
+              <h2 className="text-xl font-semibold mb-4">Sayfa Önizlemeleri</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {storyData.pages.map((page, index) => (
+                  <div key={page.id} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+                    <div className="bg-gray-100 dark:bg-gray-800 px-3 py-2 text-sm font-medium">
+                      {index === 0 ? 'Kapak Sayfası' : `Sayfa ${index}`}
+                    </div>
+                    <div className="p-3 flex flex-col h-40">
+                      {page.image ? (
+                        <div className="w-full h-24 overflow-hidden rounded-md mb-2">
+                          <img 
+                            src={page.image} 
+                            alt={`Sayfa ${index} görseli`}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      ) : (
+                        <div className="w-full h-24 bg-gray-200 dark:bg-gray-700 rounded-md mb-2 flex items-center justify-center">
+                          <span className="text-gray-400 dark:text-gray-500 text-xs">Görsel Yok</span>
+                        </div>
+                      )}
+                      <div className="text-xs line-clamp-2 flex-grow">
+                        {page.content}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          
+          <div className="lg:w-1/3 space-y-6">
+            <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl">
+              <h2 className="text-xl font-semibold mb-4">Hikaye Bilgileri</h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Hikaye Başlığı</label>
+                  <input
+                    type="text"
+                    value={storyData.title}
+                    onChange={(e) => setStoryData(prev => ({ ...prev, title: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors dark:bg-gray-700 dark:text-white"
+                    placeholder="Hikaye başlığı"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Yazar</label>
+                  <input
+                    type="text"
+                    value={storyData.authorName}
+                    onChange={(e) => setStoryData(prev => ({ ...prev, authorName: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors dark:bg-gray-700 dark:text-white"
+                    placeholder="Yazar adı"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Kategori</label>
+                  <select
+                    value={storyData.category}
+                    onChange={(e) => setStoryData(prev => ({ ...prev, category: e.target.value as StoryCategory }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 transition-colors dark:bg-gray-700 dark:text-white"
+                  >
+                    {Object.values(StoryCategory).map(category => (
+                      <option key={category} value={category}>{category}</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div className="flex flex-col">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">İstatistikler</label>
+                  <div className="bg-white dark:bg-gray-800 p-3 rounded-lg space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Toplam Sayfa:</span>
+                      <span className="font-medium">{storyData.pages.length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Resimli Sayfa:</span>
+                      <span className="font-medium">{storyData.pages.filter(p => p.image).length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Tahmini Okuma:</span>
+                      <span className="font-medium">{Math.ceil(storyData.content.length / 1000)} dk</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Sesli Hikaye:</span>
+                      <span className="font-medium">{storyData.audioEnabled ? 'Aktif' : 'Pasif'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl">
+              <h2 className="text-xl font-semibold mb-4">Yayınlama</h2>
+              <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">
+                Hikayenizi yayınladığınızda, StoryVista platformunda herkese açık olarak görüntülenecek ve paylaşılabilecektir.
+              </p>
+              
+              {!user ? (
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded-lg mb-4">
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300 font-medium">
+                    Hikayenizi yayınlamak için giriş yapmalısınız.
+                  </p>
+                </div>
+              ) : !storyData.title ? (
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 p-3 rounded-lg mb-4">
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300 font-medium">
+                    Lütfen hikayenize bir başlık ekleyin.
+                  </p>
+                </div>
+              ) : null}
+              
+              <div className="flex flex-col space-y-3">
+                <button
+                  onClick={publishStory}
+                  disabled={isLoading || !user || !storyData.title}
+                  className={`w-full py-3 rounded-lg flex items-center justify-center font-medium ${
+                    isLoading || !user || !storyData.title
+                      ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                      : 'bg-green-500 hover:bg-green-600 text-white'
+                  }`}
+                >
+                  {isLoading ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Yayınlanıyor...
+                    </>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Hikayeyi Yayınla
+                    </>
+                  )}
+                </button>
+                
+                <button
+                  onClick={saveStoryAsDraft}
+                  disabled={isLoading || !user}
+                  className={`w-full py-3 rounded-lg flex items-center justify-center font-medium ${
+                    isLoading || !user
+                      ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  Taslak Olarak Kaydet
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (window.confirm('Hikaye oluşturma işleminden vazgeçmek istediğinize emin misiniz? Kaydetmediğiniz değişiklikler kaybolacaktır.')) {
+                      window.location.href = '/';
+                    }
+                  }}
+                  disabled={isLoading}
+                  className="w-full py-3 bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-800/30 rounded-lg flex items-center justify-center font-medium"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  İptal Et
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="mt-8 flex justify-between">
+          <button
+            onClick={goToPreviousStep}
+            className="px-6 py-3 bg-gray-200 dark:bg-gray-700 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+          >
+            Geri
+          </button>
+        </div>
+      </motion.div>
+    );
+  };
+
+  // Ana render fonksiyonunda bildirim bileşenini ekleyelim ve case'leri güncelle
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-4 px-4 md:py-8">
+      {/* Bildirim */}
+      <AnimatePresence>
+        {notificationMessage && <Notification />}
+      </AnimatePresence>
+      
+      {/* Sayfa Yükleniyor */}
+      {isPageLoading ? (
+        <div className="flex items-center justify-center min-h-[70vh]">
+          <div className="text-center">
+            <svg className="animate-spin h-16 w-16 text-blue-500 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <h2 className="text-2xl font-semibold text-gray-700 dark:text-gray-300">Sayfa Yükleniyor</h2>
+            <p className="text-gray-500 dark:text-gray-400 mt-2">Lütfen bekleyin...</p>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Adım Göstergesi */}
+          {renderStepIndicator()}
+          
+          {/* Ana İçerik */}
+          <AnimatePresence mode="wait">
+            {currentStep === StoryCreationStep.PREVIEW_PUBLISH ? (
+              renderPreviewPublishStep()
+            ) : (
+              renderStepContent()
+            )}
+          </AnimatePresence>
+          
+          {/* AI Asistanı */}
+          {renderAiAssistant()}
+          
+          {/* Yardım Butonu */}
+          <motion.button
+            className="fixed bottom-6 left-6 w-12 h-12 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-lg hover:bg-blue-600 transition-colors z-20"
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              showNotification('StoryVista yardım merkezi şu anda geliştirme aşamasındadır.', 'info');
+              setAssistantMessage('StoryVista hikaye oluşturma asistanı olarak size nasıl yardımcı olabilirim? İsterseniz hikaye fikri önerileri sunabilirim veya sorularınızı yanıtlayabilirim.');
+              setAiAssistantVisible(true);
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          </motion.button>
+        </>
+      )}
+    </div>
+  );
+};
+
+export default CreateStoryPage; 
+export default CreateStoryPage; 

@@ -46,7 +46,7 @@ const getApiKey = async (keyName: string): Promise<string> => {
   try {
     // Gerçek ortamda, bu anahtarlar env değişkenlerinden gelecek
     const apiKeys: Record<string, string> = {
-      'gemini': 'AIzaSyB7-u9HB-iQmnl-C39MghjtC-hk_8yRK_c', // Gemini API anahtarı
+      'gemini': 'gemini-api-key', // Gemini API anahtarı
       'stable_diffusion': 'stable-diffusion-api-key',
       'elevenlabs': 'your-elevenlabs-api-key'
     };

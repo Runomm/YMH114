@@ -131,7 +131,7 @@ async function checkTaskStatus(taskId) {
       url: `https://api.freepik.com/v1/ai/mystic/tasks/${taskId}`,
       headers: {
         'Content-Type': 'application/json',
-        'x-freepik-api-key': 'FPSX489f58b71c044fef91b598bd070665c9'
+        'x-freepik-api-key': 'Theres nothing to see here'
       }
     });
     

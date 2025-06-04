@@ -53,26 +53,12 @@ const PageLayoutCard: React.FC<PageLayoutCardProps> = ({
           </div>
         );
         
-      case TemplateType.VISUAL_TEXT:
+      case TemplateType.PANORAMIC:
         return (
-          <div className="w-full h-full border border-gray-300 rounded-md overflow-hidden flex flex-row">
-            {/* Sol sayfa (metin) */}
-            <div className="w-1/2 h-full bg-white border-r border-gray-300 p-2">
-              <div className="w-3/4 h-2 bg-gray-300 rounded mb-2"></div>
-              <div className="w-full h-2 bg-gray-200 rounded mb-1"></div>
-              <div className="w-full h-2 bg-gray-200 rounded mb-1"></div>
-              <div className="w-full h-2 bg-gray-200 rounded mb-1"></div>
-              <div className="w-3/4 h-2 bg-gray-200 rounded mb-2"></div>
-              <div className="w-full h-2 bg-gray-200 rounded mb-1"></div>
-              <div className="w-full h-2 bg-gray-200 rounded mb-1"></div>
-              <div className="w-4/5 h-2 bg-gray-200 rounded"></div>
-            </div>
-            
-            {/* Sağ sayfa (görsel) */}
-            <div className="w-1/2 h-full bg-purple-100 flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
+          <div className="h-16 bg-gradient-to-r from-purple-400 to-pink-400 rounded flex items-center justify-center relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-purple-400/20 to-pink-400/20"></div>
+            <div className="w-full h-4 bg-white/30 rounded text-xs flex items-center justify-center z-10">
+              Panoramik Görsel + Metin
             </div>
           </div>
         );

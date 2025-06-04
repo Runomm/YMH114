@@ -66,35 +66,175 @@ const getApiKey = async (keyName: string): Promise<string> => {
 // Paket tipine göre sayfa sayısını belirler
 export const getPageCountByPackage = (packageType: PackageType, requestedCount?: number): number => {
   // Eğer belirli bir sayfa sayısı talep edildiyse ve paket tipine uygunsa doğrudan onu kullan
+  // +2 kapak ekleyerek hesapla (baş kapak + son kapak)
   if (requestedCount && requestedCount > 0) {
+    const totalWithCovers = requestedCount + 2; // +2 kapak (baş ve son)
+    
     // Paket tipine göre maksimum sayfa sayısını kontrol et
     switch(packageType) {
       case PackageType.NORMAL:
-        return Math.min(requestedCount, 6); // Normal paket max 6 sayfa
+        return Math.min(totalWithCovers, 8); // Normal paket: max 6 sayfa + 2 kapak = 8 sayfa
       case PackageType.PREMIUM1:
-        return Math.min(requestedCount, 12); // Premium1 paket max 12 sayfa
+        return Math.min(totalWithCovers, 14); // Premium1 paket: max 12 sayfa + 2 kapak = 14 sayfa
       case PackageType.PLUS:
-        return Math.min(requestedCount, 20); // Plus paket max 20 sayfa
+        return Math.min(totalWithCovers, 22); // Plus paket: max 20 sayfa + 2 kapak = 22 sayfa
       default:
-        return requestedCount; // Diğer durumlarda talep edilen sayıyı kullan
+        return totalWithCovers;
     }
   }
   
-  // Eğer özel sayfa sayısı belirtilmediyse, varsayılan değerleri kullan
+  // Eğer özel sayfa sayısı belirtilmediyse, varsayılan değerleri kullan (+2 kapak dahil)
   switch(packageType) {
     case PackageType.NORMAL:
-      return 6;
+      return 8; // 6 sayfa + 2 kapak
     case PackageType.PREMIUM1:
-      return 8;
+      return 10; // 8 sayfa + 2 kapak  
     case PackageType.PLUS:
-      return 12;
+      return 14; // 12 sayfa + 2 kapak
     default:
-      return 6; // Bilinmeyen paket tiplerinde varsayılan değer
+      return 8; // Bilinmeyen paket tiplerinde varsayılan değer
   }
 };
 
-// Hikaye metnini sayfalara böler
+// Hikayeyi sayfalara böler
 export const splitStoryIntoPages = (storyText: string, pageCount: number): StoryPage[] => {
+  // Sayfa array'i oluşturuyoruz
+  const pages: StoryPage[] = [];
+  
+  try {
+    // Gemini API'nin döndüğü sayfa etiketlerini işle
+    const pageRegex = /<sayfa\s*(\d+)>([\s\S]*?)<\/sayfa\s*\1>/g;
+    let match;
+    
+    while ((match = pageRegex.exec(storyText)) !== null) {
+      const pageNumber = parseInt(match[1]);
+      const pageContent = match[2].trim();
+      
+      // Görsel açıklamasını ayıkla
+      const imagePromptRegex = /<görsel_prompt>([\s\S]*?)<\/görsel_prompt>/;
+      const imagePromptMatch = pageContent.match(imagePromptRegex);
+      
+      let content = pageContent;
+      let imagePrompt = '';
+      
+      if (imagePromptMatch) {
+        // Görsel açıklaması etiketlerini içerikten çıkar
+        content = pageContent.replace(imagePromptRegex, '').trim();
+        imagePrompt = imagePromptMatch[1].trim();
+      }
+      
+      pages.push({
+        content: content,
+        imagePrompt: imagePrompt,
+        isTitle: pageNumber === 1 // İlk sayfa başlık/kapak sayfası
+      });
+    }
+    
+    // Eğer sayfa etiketleri bulunamadıysa, eski yöntemi kullan
+    if (pages.length === 0) {
+      console.log("Sayfa etiketleri bulunamadı, alternatif yöntem kullanılıyor.");
+      return fallbackSplitStoryIntoPages(storyText, pageCount);
+    }
+    
+    // Sayfaları sıralayalım (pageNumber'a göre sıralama yapılıyor)
+    pages.sort((a, b) => {
+      const aIsTitle = a.isTitle ? 1 : 0;
+      const bIsTitle = b.isTitle ? 1 : 0;
+      return aIsTitle - bIsTitle;
+    });
+    
+    // Hedef sayfa sayısına ulaşana kadar işle
+    while (pages.length < pageCount) {
+      const currentPageNum = pages.length + 1;
+      
+      // Son sayfa mı kontrol et
+      const isLastPage = currentPageNum === pageCount;
+      
+      if (isLastPage) {
+        // Son kapak sayfası
+        pages.push({
+          content: "Son Sayfa",
+          imagePrompt: "Hikaye son kapağı",
+          isTitle: true // Son kapak da başlık sayfası olarak işaretle
+        });
+      } else {
+        // Normal içerik sayfası
+      pages.push({
+        content: "",
+        imagePrompt: "Dekoratif sayfa görseli"
+      });
+      }
+    }
+    
+    return pages;
+  } catch (error) {
+    console.error("Hikayeyi sayfalara bölme hatası:", error);
+    return fallbackSplitStoryIntoPages(storyText, pageCount);
+  }
+};
+
+// Yedek sayfalara bölme fonksiyonu (API düzgün formatta dönmezse)
+const fallbackSplitStoryIntoPages = (storyText: string, pageCount: number): StoryPage[] => {
+  // İlk önce hikaye metnini paragraflarına ayırıyoruz
+  const paragraphs = storyText.split('\n\n').filter(p => p.trim());
+  
+  // Baş kapak (1) + İçerik sayfaları + Son kapak (1) = toplam pageCount
+  const contentPageCount = Math.max(0, pageCount - 2); // 2 kapak sayfası çıkar
+  
+  // Her sayfada olması gereken paragraf sayısını hesaplıyoruz
+  const paragraphsPerPage = Math.max(1, Math.ceil(paragraphs.length / contentPageCount));
+  
+  // Sayfa array'i oluşturuyoruz
+  const pages: StoryPage[] = [];
+  
+  // 1. Baş kapak sayfası ekliyoruz
+  pages.push({
+    content: paragraphs[0] || "Yeni Hikaye",
+    isTitle: true,
+    imagePrompt: "Kitap ön kapağı"
+  });
+  
+  // 2. İçerik sayfalarını oluşturuyoruz
+  for (let i = 0; i < contentPageCount; i++) {
+    const startIdx = 1 + (i * paragraphsPerPage); // İlk paragraf kapak için kullanıldı
+    const endIdx = Math.min(startIdx + paragraphsPerPage, paragraphs.length);
+    const pageContent = paragraphs.slice(startIdx, endIdx).join('\n\n');
+    
+    if (pageContent.trim()) {
+      pages.push({
+        content: pageContent,
+        imagePrompt: `İçerik sayfası ${i + 1} görseli: ${pageContent.substring(0, 100)}...`
+      });
+    } else {
+      pages.push({
+        content: `Bu ${i + 1}. sayfanın içeriğidir.`,
+        imagePrompt: `Sayfa ${i + 1} görseli`
+      });
+    }
+  }
+  
+  // 3. Son kapak sayfası ekliyoruz (eğer pageCount > 1 ise)
+  if (pageCount > 1) {
+    pages.push({
+      content: "Son Sayfa",
+      isTitle: true,
+      imagePrompt: "Kitap arka kapağı"
+    });
+  }
+  
+  // Hedef sayfa sayısına tam ulaştığımızı kontrol et
+  while (pages.length < pageCount) {
+    pages.push({
+      content: "",
+      imagePrompt: "Boş sayfa görseli"
+    });
+  }
+  
+  return pages;
+};
+
+// Hikaye metnini sayfalara böler
+export const splitStoryIntoPagesOld = (storyText: string, pageCount: number): StoryPage[] => {
   // Sayfa array'i oluşturuyoruz
   const pages: StoryPage[] = [];
   
@@ -155,131 +295,247 @@ export const splitStoryIntoPages = (storyText: string, pageCount: number): Story
   }
 };
 
-// Yedek sayfalara bölme fonksiyonu (API düzgün formatta dönmezse)
-const fallbackSplitStoryIntoPages = (storyText: string, pageCount: number): StoryPage[] => {
-  // İlk önce hikaye metnini paragraflarına ayırıyoruz
-  const paragraphs = storyText.split('\n\n').filter(p => p.trim());
+// Hikaye metni oluşturmak için Gemini API'yi kullanır - GÜÇLENDIRILMIŞ
+export const generateStoryText = async (prompt: StoryPrompt): Promise<string> => {
+  // Denenecek model listesi - yeniden eskiye doğru
+  const models = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro'];
   
-  // Kapak sayfası ekleyeceğimiz için geriye kalan sayfa sayısını hesaplıyoruz
-  const contentPageCount = pageCount - 1;
-  
-  // Her sayfada olması gereken paragraf sayısını hesaplıyoruz
-  // (Hikaye paylaştırma dengeleme algoritması)
-  const paragraphsPerPage = Math.max(1, Math.ceil(paragraphs.length / contentPageCount));
-  
-  // Sayfa array'i oluşturuyoruz
-  const pages: StoryPage[] = [];
-  
-  // Kapak sayfası ekliyoruz
-  pages.push({
-    content: paragraphs[0] || "Yeni Hikaye",
-    isTitle: true,
-    imagePrompt: "Book cover illustration"
-  });
-  
-  // İçerik sayfalarını oluşturuyoruz
-  for (let i = 0; i < contentPageCount; i++) {
-    const startIdx = i * paragraphsPerPage;
-    const endIdx = Math.min(startIdx + paragraphsPerPage, paragraphs.length);
-    const pageContent = paragraphs.slice(startIdx, endIdx).join('\n\n');
-    
-    if (pageContent.trim()) {
-      pages.push({
-        content: pageContent,
-        imagePrompt: `Illustration for: ${pageContent.substring(0, 100)}...`
+  for (const model of models) {
+    try {
+      console.log(`${model} modeli deneniyor...`);
+      
+      // Gemini API anahtarını al
+      const apiKey = await getApiKey('gemini');
+      
+      // Kullanıcının seçtiği sayfa sayısını kullan - +2 formatı
+      const totalPageCount = prompt.pageCount || 8; // Varsayılan 6+2=8 sayfa
+      const contentPageCount = totalPageCount - 2; // İçerik sayfaları (kapaklar hariç)
+      
+      console.log(`Gemini API'den talep edilen: ${totalPageCount} toplam sayfa (${contentPageCount} hikaye + 2 kapak)`);
+      console.log('Prompt detayları:', {
+        title: prompt.title,
+        character: prompt.mainCharacter,
+        setting: prompt.setting,
+        inspiration: prompt.inspiration,
+        pageCount: totalPageCount
       });
+      
+      // Her sayfada olması gereken kelime sayısı - çocuk kitapları için standart
+      const wordsPerPage = 50; // Çocuk kitapları için optimal kelime sayısı
+      const totalWords = wordsPerPage * contentPageCount;
+      
+      // ÇOK GÜÇLENDIRILMIŞ Prompt metnini oluştur
+      let promptText = `
+SEN BİR UZMAN ÇOCUK HİKAYESİ YAZARISIN!
+
+MUTLAK KURAL: KESINLIKLE ${totalPageCount} SAYFA YAZMALISIN - NE FAZLA NE EKSİK!
+
+HİKAYE YAPISI (HER SAYFA MUTLAKA DOLDURULMALI):
+1. Sayfa: Kapak sayfası (${prompt.title || 'Başlık'})
+2-${totalPageCount - 1}. Sayfalar: Hikaye içeriği (${contentPageCount} sayfa)
+${totalPageCount}. Sayfa: Son kapak
+
+HER SAYFA İÇİN FORMAT:
+<sayfa 1>
+${prompt.title || prompt.inspiration}
+Yazar: Hikaye Yazarı
+Bu hikayenin kapak sayfasıdır.
+<görsel_prompt>Kitap kapağı: ${prompt.inspiration} konulu çocuk kitabı kapağı</görsel_prompt>
+</sayfa 1>
+
+<sayfa 2>
+[Hikaye başlangıcı - tam ${wordsPerPage} kelime yazın]
+[Hikayenin açılışını, karakterlerin tanıtımını yapın]
+[Bu sayfa hikayenin başlangıç kısmı olmalı]
+<görsel_prompt>Hikaye başlangıcı: [bu sayfanın içeriğine uygun görsel açıklaması]</görsel_prompt>
+</sayfa 2>
+
+[DEVAM EDİN... ${contentPageCount} hikaye sayfası yazın]
+
+<sayfa ${totalPageCount}>
+Son
+Hikayemiz burada sona eriyor. ${prompt.title || 'Bu güzel hikaye'} böylece mutlu sonla bitti.
+<görsel_prompt>Son kapak: Hikayenin mutlu sonu</görsel_prompt>
+</sayfa ${totalPageCount}>
+
+HİKAYE BİLGİLERİ:
+- Kategori: ${prompt.category}
+- Ton: ${prompt.tone} 
+- Ana Karakter: ${prompt.mainCharacter || 'Çocuk'}
+- Mekan: ${prompt.setting || 'Güzel bir yer'}
+- Konu: ${prompt.inspiration}
+- TOPLAM SAYFA: ${totalPageCount} (Bu çok önemli!)
+- Sayfa başına kelime: ${wordsPerPage}
+- Toplam kelime hedefi: ${totalWords}
+
+YAZIM KURALLARI:
+- Her sayfa MUTLAKA ${wordsPerPage} kelime civarında olsun
+- Hikaye akıcı ve çocuklar için anlaşılır olsun
+- Her sayfanın sonunda <görsel_prompt> etiketi olsun
+- ${totalPageCount} sayfanın tamamını doldurun
+- Hiçbir sayfayı boş bırakmayın
+- Her sayfa kendi içinde tamamlanmış bir bölüm olsun
+
+ÖNEMLİ: Bu format KESINLIKLE takip edilmeli ve ${totalPageCount} sayfa yazmalısın!
+      `;
+      
+      console.log(`${model} modeli ile API çağrısı yapılıyor...`);
+      
+      // ENHANCED: Gemini API isteği - daha detaylı hata yakalama
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      console.log('API URL:', apiUrl.replace(apiKey, 'API_KEY_HIDDEN'));
+      
+      const requestBody = {
+        contents: [{
+          parts: [{
+            text: promptText
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.9,
+          topK: 32,
+          topP: 1,
+          maxOutputTokens: 4096, // Daha uzun hikayeler için token sayısını artırdık
+          stopSequences: []
+        }
+      };
+      
+      console.log('Request body hazırlandı, API çağrısı yapılıyor...');
+      
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      console.log(`${model} API yanıt durumu:`, response.status, response.statusText);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`${model} API hata detayları:`, errorText);
+        
+        // 404 hatası ise bir sonraki modeli dene
+        if (response.status === 404) {
+          console.log(`${model} modeli bulunamadı, bir sonraki model deneniyor...`);
+          continue;
+        }
+        
+        throw new Error(`Gemini API hatası: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log(`${model} API yanıt yapısı:`, {
+        candidates: data.candidates ? data.candidates.length : 0,
+        hasContent: data.candidates?.[0]?.content ? 'yes' : 'no'
+      });
+      
+      if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+        console.error(`${model} geçersiz API yanıtı:`, data);
+        throw new Error(`${model} geçersiz yanıt döndü`);
+      }
+
+      const generatedText = data.candidates[0].content.parts[0].text;
+      console.log(`${model} ile oluşturulan metin uzunluğu:`, generatedText.length);
+      
+      // Sayfa sayısını kontrol et
+      const pageMatches = generatedText.match(/<sayfa\s+\d+>/g);
+      const actualPageCount = pageMatches ? pageMatches.length : 0;
+      
+      console.log(`${model} API'den dönen sayfa sayısı: ${actualPageCount}, Beklenen: ${totalPageCount}`);
+      
+      if (actualPageCount < totalPageCount) {
+        console.warn(`UYARI: ${model} beklenen sayfa sayısından az sayfa döndürdü. Eksik sayfalar manuel olarak tamamlanacak.`);
+      }
+      
+      // Eğer metin çok kısa ise bir sonraki modeli dene
+      if (generatedText.length < 200) {
+        console.log(`${model} çok kısa yanıt döndürdü, bir sonraki model deneniyor...`);
+        continue;
+      }
+      
+      console.log(`✅ ${model} modeli ile başarıyla hikaye oluşturuldu!`);
+      return generatedText;
+      
+    } catch (error) {
+      console.error(`${model} modeli hatası:`, error);
+      
+      // Eğer son model de başarısız olursa hatayı fırlat
+      if (model === models[models.length - 1]) {
+        console.error('Tüm Gemini modelleri başarısız oldu');
+        throw error;
+      }
+      
+      // Aksi halde bir sonraki modeli dene
+      console.log(`${model} başarısız, bir sonraki model deneniyor...`);
+      continue;
     }
   }
   
-  // Eğer sayfa sayısı hedeften az çıktıysa, boş sayfalar ekleyerek tamamlıyoruz
-  while (pages.length < pageCount) {
-    pages.push({
-      content: "",
-      imagePrompt: "Decorative illustration for story"
-    });
-  }
-  
-  return pages;
+  // Bu noktaya hiç ulaşmamalı ama güvenlik için
+  throw new Error('Hiçbir Gemini modeli çalışmadı');
 };
 
-// Hikaye metni oluşturmak için Gemini API'yi kullanır
-export const generateStoryText = async (prompt: StoryPrompt): Promise<string> => {
-  try {
-    // Gemini API anahtarını al
-    const apiKey = await getApiKey('gemini');
+// Geliştirilmiş mock hikaye oluşturma fonksiyonu
+const generateEnhancedMockStory = (prompt: StoryPrompt): string => {
+  const totalPageCount = prompt.pageCount || 8;
+  const contentPageCount = totalPageCount - 2;
+  
+  const characterName = prompt.mainCharacter || 'Minik Kahraman';
+  const setting = prompt.setting || 'büyülü bir dünya';
+  const inspiration = prompt.inspiration || 'harika bir macera';
+  const title = prompt.title || 'Harika Bir Hikaye';
+  
+  console.log(`Mock hikaye oluşturuluyor: ${totalPageCount} sayfa, karakter: ${characterName}, mekan: ${setting}`);
+  
+  let mockStory = `<sayfa 1>
+${title}
+Yazar: Hikaye Yazarı
+${characterName}'nin ${setting} mekanında yaşadığı ${inspiration} hikayesi.
+<görsel_prompt>Kitap kapağı: ${title} - ${characterName} karakteri ${setting} mekanında</görsel_prompt>
+</sayfa 1>
+
+`;
+  
+  // Hikaye şablonları
+  const storyTemplates = [
+    `${characterName}, ${setting} adlı yerde yaşıyordu. Her sabah pencereden baktığında harika manzarayı görürdü. Bu gün diğerlerinden farklı olacaktı. Çünkü ${inspiration} ile ilgili bir şeyler öğrenecekti. Merakla günün başlamasını bekliyordu. Arkadaşları da ona eşlik edecekti.`,
     
-    // Gemini API için uzunluk ayarları
-    const tokenLimits = {
-      short: 500,  // ~300 kelime
-      medium: 1000, // ~600 kelime
-      long: 1600,   // ~1000 kelime
-    };
+    `Bir gün ${characterName} ${setting} mekanında dolaşırken çok ilginç bir şey keşfetti. ${inspiration} hakkında daha fazla bilgi edinmeye karar verdi. Bu macera onu çok heyecanlandırmıştı. Cesaretle ileri doğru adım attı. Yolculuğu şimdi başlıyordu. Her adımda yeni şeyler öğreniyordu.`,
     
-    // Paket tipine göre sayfa sayısını hesapla - kullanıcının seçtiği değere öncelik ver
-    const pageCount = prompt.pageCount || 
-                      (prompt.packageType 
-                       ? getPageCountByPackage(prompt.packageType, prompt.pageCount)
-                       : 6);
+    `${characterName}'nin arkadaşları ona bu konuda yardım etmeye karar verdiler. ${setting} mekanının sırlarını birlikte keşfedeceklerdi. ${inspiration} onları bekleyen en büyük sürprizdi. Hep birlikte planlar yapmaya başladılar. Bu iş birliği onları güçlendiriyordu. Dostluk bağları daha da sağlamlaşıyordu.`,
     
-    console.log(`Hikaye ${pageCount} sayfa olarak oluşturuluyor.`);
+    `Yolculukları sırasında ${characterName} ve arkadaşları birçok zorlukla karşılaştılar. Ama birlik olunca her şeyin üstesinden gelebildiler. ${setting} mekanı onlara değerli dersler öğretiyordu. ${inspiration} artık yakın görünüyordu. Cesaretleri hiç eksilmiyordu. Her engeli aşarak ilerliyorlardı.`,
     
-    // Gemini API için dil tercihi
-    const language = 'tr'; // Türkçe
+    `Sonunda ${characterName} aradığını bulmuştu. ${inspiration} gerçekten de harikalaşmış. ${setting} mekanının tüm güzellikleri karşısında çıkmıştı. Bu macera onu çok değiştirmişti. Artık daha cesur ve bilgiliydi. Arkadaşlarıyla birlikte başardıkları şey muhteşemdi.`,
     
-    // Her sayfada olması gereken kelime ve karakter sayısı
-    const wordsPerPage = 70; // Her sayfada yaklaşık 70 kelime (çocuk kitabı formatında)
-    const totalWords = wordsPerPage * (pageCount - 1); // Kapak sayfası hariç
+    `${characterName} bu macerada çok şey öğrenmişti. ${setting} mekanının değerini anlamıştı. ${inspiration} sayesinde yeni bakış açıları kazanmıştı. Arkadaşlarının desteği çok önemliydi. Bu deneyim onu büyütmüş ve geliştirmişti. Artık her şeye farklı gözle bakıyordu.`
+  ];
+  
+  // İçerik sayfaları - her sayfa için dinamik içerik
+  for (let i = 2; i <= totalPageCount - 1; i++) {
+    const pageNumber = i;
+    const templateIndex = (i - 2) % storyTemplates.length;
+    const pageContent = storyTemplates[templateIndex];
     
-    // Kitap boyutları ve formatı (çocuk kitabı standartları)
-    const bookFormat = {
-      width: "20cm", // 20cm genişlik (standart)
-      height: "20cm", // 20cm yükseklik (kare format)
-      pages: pageCount, // Kullanıcının seçtiği sayfa sayısı
-      wordsPerPage: wordsPerPage,
-      totalWords: totalWords,
-      fontSizeRange: "14pt-16pt", // Çocuk kitapları için uygun font büyüklüğü
-      paragraphStyle: "kısa paragraflar, çocuk seviyesine uygun cümleler",
-    };
-    
-    // Prompt metnini oluştur
-    let promptText = `Bir ${prompt.category.toLowerCase()} çocuk hikaye kitabı yaz. `;
-    promptText += `Hikaye tonu ${prompt.tone} olmalı. `;
-    promptText += `${prompt.characterCount} karakter içermeli. `;
-    promptText += `Hikaye kitabı tam olarak ${pageCount} sayfadan oluşmalı ve her sayfa yaklaşık ${wordsPerPage} kelime içermeli. `;
-    promptText += `Toplam kelime sayısı yaklaşık ${totalWords} olmalı. `;
-    promptText += `Hikaye kitabı TAM OLARAK ${pageCount} sayfa olmalı - ne daha az ne daha fazla! `;
-    promptText += `Her sayfayı <sayfa> ve </sayfa> etiketleri içinde numaralandırarak ver. Birinci sayfa kapak sayfası olacak. `;
-    promptText += `Kitap boyutları: ${bookFormat.width} x ${bookFormat.height}, kare formatta. `;
-    
-    // Kullanıcı tarafından sağlanan bilgileri ekle
-    if (prompt.mainCharacter) {
-      promptText += `Ana karakter: ${prompt.mainCharacter}. `;
-    }
-    
-    if (prompt.setting) {
-      promptText += `Hikaye mekanı: ${prompt.setting}. `;
-    }
-    
-    if (prompt.title) {
-      promptText += `Hikaye başlığı: ${prompt.title}. `;
-    }
-    
-    // İlham/fikri ekle
-    promptText += `Hikaye fikri/konusu: ${prompt.inspiration}. `;
-    
-    // Görsel açıklamaları için talimatlar ekle
-    promptText += `Her sayfa için bir görsel de açıkla. Görsel açıklamasını <görsel_prompt></görsel_prompt> etiketleri arasında ver. Görsel açıklamaları detaylı ve hikayeyle uyumlu olmalı.`;
-    
-    console.log(`Hikaye promptu hazırlandı: ${promptText}`);
-    
-    // Şimdilik API entegrasyonu tam olarak aktif edilmediği için mock hikaye döndürüyoruz
-    // Gerçek entegrasyonda burada Gemini API'yi çağıracağız
-    return generateMockStory(prompt);
-    
-  } catch (error) {
-    console.error('Hikaye metni oluşturma sırasında hata:', error);
-    throw new Error('Hikaye metni oluşturulamadı. Lütfen daha sonra tekrar deneyin.');
+    mockStory += `<sayfa ${pageNumber}>
+${pageContent}
+<görsel_prompt>Sayfa ${pageNumber}: ${characterName} ${setting} mekanında, ${inspiration} ile ilgili macera</görsel_prompt>
+</sayfa ${pageNumber}>
+
+`;
   }
+  
+  // Son kapak
+  mockStory += `<sayfa ${totalPageCount}>
+Son
+${title} böylece mutlu sonla bitti. ${characterName} bu macerada çok şey öğrendi ve büyüdü.
+<görsel_prompt>Son kapak: ${characterName}'nin mutlu sonu - ${setting} mekanında başarılı macera</görsel_prompt>
+</sayfa ${totalPageCount}>`;
+  
+  console.log(`Mock hikaye ${totalPageCount} sayfa olarak başarıyla oluşturuldu.`);
+  return mockStory;
 };
 
 // Hikaye görseli oluşturmak için Mystic API kullanır
@@ -452,45 +708,36 @@ export const generateStoryAudio = async (storyText: string): Promise<string> => 
 // Tüm hikaye oluşturma sürecini yönetir
 export const generateCompleteStory = async (prompt: StoryPrompt): Promise<StoryResponse> => {
   try {
+    console.log('Hikaye oluşturma başlatılıyor...', prompt);
+    
     // Hikaye metnini oluştur
     const storyText = await generateStoryText(prompt);
     
-    // Paket tipine göre sayfa sayısını hesapla
-    const pageCount = prompt.packageType 
-      ? getPageCountByPackage(prompt.packageType, prompt.pageCount)
-      : 6;
-    
-    // Hikayeyi sayfalara böl
-    const storyPages = splitStoryIntoPages(storyText, pageCount);
-    
-    // Kitap kapağı için görsel oluştur
-    let coverImageUrl = '';
-    try {
-      const coverPrompt = storyPages[0]?.isTitle 
-        ? `Book cover for a ${prompt.category} story titled: ${storyPages[0].content}`
-        : `Book cover for a ${prompt.category} story about ${prompt.inspiration}`;
-        
-      coverImageUrl = await generateStoryImage({ prompt: coverPrompt });
-    } catch (imageError) {
-      console.error('Kapak görseli oluşturma hatası:', imageError);
+    if (!storyText) {
+      throw new Error('Hikaye metni oluşturulamadı');
     }
+    
+    // Metni sayfalara böl
+    const totalPageCount = prompt.pageCount || 8;
+    const pages = splitStoryIntoPages(storyText, totalPageCount);
+    
+    console.log(`Hikaye başarıyla oluşturuldu: ${pages.length} sayfa`);
+    
+    // İlk sayfa (kapak) için görsel oluştur
+    const coverImagePrompt = `${prompt.inspiration} - çocuk kitabı kapağı, ${prompt.mainCharacter || 'çocuk'} karakteri, ${prompt.setting || 'güzel manzara'} ortamında`;
+    
+    // Mock görsel URL'si (gerçek API entegrasyonunda değiştirilecek)
+    const mockImageUrl = `https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=800&q=80&v=${Math.random()}`;
     
     return {
       text: storyText,
-      imageUrl: coverImageUrl,
-      pages: storyPages
+      imageUrl: mockImageUrl,
+      pages: pages
     };
+    
   } catch (error) {
     console.error('Hikaye oluşturma hatası:', error);
-    
-    // Hata durumunda basit bir mock yanıt döndür
-    const mockPages = generateMockPages(prompt);
-    
-    return {
-      text: generateMockStory(prompt),
-      imageUrl: 'https://images.unsplash.com/photo-1516515429572-bf32372f2409?w=800&h=600&fit=crop',
-      pages: mockPages
-    };
+    throw error;
   }
 };
 

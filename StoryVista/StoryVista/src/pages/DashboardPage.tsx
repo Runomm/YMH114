@@ -3,16 +3,17 @@ import { motion } from 'framer-motion';
 import { useAuth } from '../lib/authContext';
 import { Link } from 'react-router-dom';
 
+console.log("DashboardPage yüklendi");
+
 const DashboardPage: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'my-stories' | 'favorites' | 'recent'>('my-stories');
   
-  // Bu veriler normalde bir API'den çekilecek
-  const [myStories, setMyStories] = useState([
+  const initialStories = [
     {
       id: '1',
-      title: 'Ormandaki Macera',
-      cover: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&q=80&w=2070',
+      title: 'Ejderha Adası',
+      cover: 'https://images.unsplash.com/photo-1500043357830-5e8e3a41c0da?auto=format&fit=crop&w=2070&q=80&v=' + Math.random(),
       category: 'Macera',
       createdAt: '2023-10-15',
       rating: 4.7,
@@ -35,10 +36,92 @@ const DashboardPage: React.FC = () => {
       createdAt: '2023-10-05',
       rating: 4.8,
       duration: '10 dk'
+    },
+    {
+      id: '4',
+      title: 'Zaman Yolcusu',
+      cover: 'https://images.unsplash.com/photo-1451187580459-43490279c0fa?auto=format&fit=crop&q=80&w=2072',
+      category: 'Bilim Kurgu',
+      createdAt: '2023-09-28',
+      rating: 4.9,
+      duration: '15 dk'
+    },
+    {
+      id: '5',
+      title: 'Sihirli Orman',
+      cover: 'https://images.unsplash.com/photo-1560807707-8cc77767d783?auto=format&fit=crop&q=80&w=2070',
+      category: 'Fantastik',
+      createdAt: '2023-09-25',
+      rating: 4.6,
+      duration: '11 dk'
+    },
+    {
+      id: '6',
+      title: 'Karanlık Sırlar',
+      cover: 'https://images.unsplash.com/photo-1509228627152-72ae9ae6848d?auto=format&fit=crop&q=80&w=2070',
+      category: 'Gizem',
+      createdAt: '2023-09-22',
+      rating: 4.7,
+      duration: '13 dk'
+    },
+    {
+      id: '7',
+      title: 'Buz Kralı',
+      cover: 'https://images.unsplash.com/photo-1472214103451-9374bd1c798e?auto=format&fit=crop&q=80&w=2070',
+      category: 'Fantastik',
+      createdAt: '2023-09-20',
+      rating: 4.8,
+      duration: '14 dk'
+    },
+    {
+      id: '8',
+      title: 'Yıldızların Sırrı',
+      cover: 'https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&q=80&w=2070',
+      category: 'Bilim Kurgu',
+      createdAt: '2023-09-18',
+      rating: 4.9,
+      duration: '16 dk'
+    },
+    {
+      id: '9',
+      title: 'Kayıp Hazinenin İzinde',
+      cover: 'https://images.unsplash.com/photo-1472173148041-00294f0814a2?auto=format&fit=crop&q=80&w=2070',
+      category: 'Macera',
+      createdAt: '2023-09-15',
+      rating: 4.7,
+      duration: '12 dk'
+    },
+    {
+      id: '10',
+      title: 'Denizin Derinlikleri',
+      cover: 'https://images.unsplash.com/photo-1682687220063-4742bd7fd538?auto=format&fit=crop&q=80&w=2070',
+      category: 'Macera',
+      createdAt: '2023-09-12',
+      rating: 4.9,
+      duration: '15 dk'
+    },
+    {
+      id: '11',
+      title: 'Kayıp Şehir',
+      cover: 'https://images.unsplash.com/photo-1518391846015-55a9cc003b25?auto=format&fit=crop&q=80&w=2070',
+      category: 'Fantastik',
+      createdAt: '2023-09-10',
+      rating: 4.6,
+      duration: '11 dk'
+    },
+    {
+      id: '12',
+      title: 'Gece Bekçileri',
+      cover: 'https://images.unsplash.com/photo-1507676385008-e7fb562d11f8?auto=format&fit=crop&q=80&w=2069',
+      category: 'Gizem',
+      createdAt: '2023-09-08',
+      rating: 4.3,
+      duration: '9 dk'
     }
-  ]);
-  
-  const [favoriteStories, setFavoriteStories] = useState([
+  ];
+
+  const [myStories] = useState(initialStories);
+  const [favoriteStories] = useState([
     {
       id: '4',
       title: 'Denizin Derinlikleri',
@@ -59,7 +142,7 @@ const DashboardPage: React.FC = () => {
     }
   ]);
   
-  const [recentlyViewed, setRecentlyViewed] = useState([
+  const [recentlyViewed] = useState([
     {
       id: '6',
       title: 'Gece Bekçileri',
@@ -118,6 +201,11 @@ const DashboardPage: React.FC = () => {
                   src={story.cover} 
                   alt={story.title} 
                   className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    console.error('Görsel yüklenemedi:', story.cover);
+                    target.src = 'https://images.unsplash.com/photo-1635067463955-c55b153fe40f?fm=jpg&q=60&w=3000&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D';
+                  }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent"></div>
                 <div className="absolute bottom-3 left-3 right-3">

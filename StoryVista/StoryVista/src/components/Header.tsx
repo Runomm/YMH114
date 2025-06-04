@@ -53,7 +53,7 @@ const Header: React.FC<HeaderProps> = ({ darkMode, toggleDarkMode }) => {
         <div className="container px-4 mx-auto flex justify-between items-center">
           {/* Logo */}
           <Link to="/" className="flex-shrink-0 flex items-center">
-            <span className="text-xl font-bold text-white">Story<span className="text-white">Vista</span></span>
+            <span className="text-xl font-bold text-orange-500">Story<span className="text-orange-500">Vista</span></span>
           </Link>
           
           {/* Desktop Navigation */}
@@ -109,6 +109,18 @@ const Header: React.FC<HeaderProps> = ({ darkMode, toggleDarkMode }) => {
               Hikaye Oluştur
               <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">AI</span>
             </Link>
+            {user && (
+              <Link 
+                to="/library" 
+                className={`px-3 py-2 rounded-md text-sm font-medium ${
+                  isActive('/library') 
+                    ? 'text-sky-500' 
+                    : 'text-gray-700 dark:text-gray-300 hover:text-sky-500 dark:hover:text-sky-400'
+                }`}
+              >
+                Kütüphanem
+              </Link>
+            )}
           </div>
 
           {/* Right section */}
@@ -168,6 +180,12 @@ const Header: React.FC<HeaderProps> = ({ darkMode, toggleDarkMode }) => {
                     Profilim
                   </Link>
                   <Link 
+                    to="/library" 
+                    className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    📚 Kütüphanem
+                  </Link>
+                  <Link 
                     to="/create-story" 
                     className="block px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
                   >
@@ -219,8 +237,8 @@ const Header: React.FC<HeaderProps> = ({ darkMode, toggleDarkMode }) => {
         <div className="absolute inset-0 bg-black opacity-50" onClick={closeMenu}></div>
         <div className="relative w-64 max-w-sm h-full bg-white dark:bg-gray-900 shadow-xl flex flex-col">
           <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700">
-            <Link to="/" className="font-bold text-2xl text-white" onClick={closeMenu}>
-              Story<span className="text-white">Vista</span>
+            <Link to="/" className="font-bold text-2xl text-orange-500" onClick={closeMenu}>
+              Story<span className="text-orange-500">Vista</span>
             </Link>
             <button className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200" onClick={closeMenu}>
               <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

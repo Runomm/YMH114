@@ -104,21 +104,24 @@ const BookPage: React.FC<BookPageProps> = ({
     fontFamily: 'var(--font-body, sans-serif)',
   };
 
-  // Başlık metni stili
-  const titleStyle = {
-    fontSize: page.isTitle ? '1.5rem' : '1.25rem',
-    fontWeight: 'bold' as 'bold',
-    marginBottom: '0.75rem',
-    color: '#1f2937', // Koyu gri
-    textShadow: page.isTitle ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
-    lineHeight: '1.3',
-  };
-
   // İçerik metni stili
   const textStyle = {
-    fontSize: '1rem',
-    lineHeight: '1.6',
-    color: '#374151', // Gri
+    fontSize: '1.1rem',
+    lineHeight: '1.7',
+    color: '#374151',
+    textAlign: 'justify' as 'justify',
+    wordSpacing: '0.05em',
+  };
+
+  // Başlık metni stili
+  const titleStyle = {
+    fontSize: page.isTitle ? '1.6rem' : '1.3rem',
+    fontWeight: 'bold' as 'bold',
+    marginBottom: '0.75rem',
+    color: '#1f2937',
+    textShadow: page.isTitle ? '0 2px 4px rgba(0, 0, 0, 0.1)' : 'none',
+    lineHeight: '1.3',
+    textAlign: page.isTitle ? 'center' as 'center' : 'left' as 'left',
   };
 
   // Sayfa numarası stili
@@ -177,6 +180,65 @@ const BookPage: React.FC<BookPageProps> = ({
     );
   }
 
+  // Arka kapak (son sayfa) için özel düzen
+  if (isBackCoverPage) {
+    return (
+      <div className="w-full h-full relative" style={{ maxWidth: MAX_WIDTH, aspectRatio: ASPECT_RATIO, margin: '0 auto' }}>
+        <motion.div 
+          className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 rounded-lg shadow-lg"
+          initial={{ rotateY: 0 }}
+          animate={{ rotateY: isFlipping ? 180 : 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <div className="w-full h-full flex flex-col justify-center items-center p-8 text-center">
+            {/* Son sayfa için özel tasarım */}
+            <div className="bg-white dark:bg-gray-600 rounded-full p-6 mb-6 shadow-lg">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.5 2.5L19 4M7 7l2.5 2.5L7 12m10-5v4m-2-2h4M17 17v4m-2-2h4" />
+              </svg>
+            </div>
+            
+            <h2 className="text-3xl font-bold text-gray-800 dark:text-white mb-4">
+              Son
+            </h2>
+            
+            <p className="text-lg text-gray-600 dark:text-gray-300 mb-6 max-w-xs leading-relaxed">
+              {page.content || `${bookTitle || 'Hikayeniz'} burada sona eriyor. Yusuf'un maceraları böyle mutlu sonla bitti.`}
+            </p>
+            
+            <div className="text-center">
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-400 mb-2">
+                {authorName || 'Yazar'}
+              </p>
+              <div className="w-16 h-1 bg-blue-500 rounded mx-auto mb-4"></div>
+              <p className="text-xs text-gray-500 dark:text-gray-500">
+                StoryVista
+              </p>
+            </div>
+          </div>
+          
+          {/* Sayfa numarası */}
+          <div style={pageNumberStyle}>
+            {page.pageNumber}
+          </div>
+        </motion.div>
+        
+        {showFlipButtons && (
+          <div style={{ position: 'absolute', left: '-1.5rem', top: '50%', transform: 'translateY(-50%)' }}>
+            <button
+              className="bg-blue-500 text-white rounded-full p-2 shadow-lg hover:bg-blue-600 transition-all"
+              onClick={() => handlePageFlip('prev')}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // Sayfa şablonuna göre içerik düzeni
   const renderPageContent = () => {
     const template = page.template || TemplateType.CLASSIC;
@@ -214,110 +276,32 @@ const BookPage: React.FC<BookPageProps> = ({
           </>
         );
         
-      case TemplateType.VISUAL_TEXT:
-        return (
-          <div className="flex flex-row h-full">
-            <div className="w-1/2 h-full pr-2">
-              {page.image ? (
-                <div style={{height: '100%', borderRadius: '0.5rem', overflow: 'hidden'}}>
-                  <img 
-                    src={page.image} 
-                    alt={`Sayfa ${page.pageNumber}`} 
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                  />
-                </div>
-              ) : (
-                <div style={{height: '100%', borderRadius: '0.5rem', backgroundColor: '#f3f4f6', display: 'flex', justifyContent: 'center', alignItems: 'center'}}>
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                </div>
-              )}
-            </div>
-            
-            <div className="w-1/2 h-full pl-2 flex flex-col">
-              {page.title && <h2 style={titleStyle}>{page.title}</h2>}
-              <div className="flex-grow overflow-auto">
-                {page.content.split('\n').map((paragraph, index) => (
-                  <p key={index} style={textStyle} className="mb-3">
-                    {paragraph.trim()}
-                  </p>
-                ))}
-              </div>
-            </div>
-            
-            <div style={pageNumberStyle}>Sayfa {page.pageNumber}</div>
-          </div>
-        );
-        
       case TemplateType.PANORAMIC:
         return (
-          <div className="flex flex-col h-full relative">
-            {/* Panoramik görsel - sayfanın tamamını kaplar */}
-            {page.image ? (
-              <div style={{
-                width: '100%', 
-                height: '100%', 
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                borderRadius: '0.5rem',
-                overflow: 'hidden',
-                zIndex: 1
-              }}>
+          <div className="w-full h-full relative overflow-hidden rounded-lg bg-gradient-to-br from-purple-50 to-blue-50 dark:from-purple-900 dark:to-blue-900">
+            {/* Tam sayfa görsel */}
+            {page.image && (
+              <div className="absolute inset-0">
                 <img 
                   src={page.image} 
-                  alt={`Sayfa ${page.pageNumber}`} 
-                  style={{ 
-                    width: '100%', 
-                    height: '100%', 
-                    objectFit: 'cover' 
-                  }} 
+                  alt={`Sayfa ${page.pageNumber} görseli`} 
+                  className="w-full h-full object-cover opacity-80"
                 />
-              </div>
-            ) : (
-              <div style={{
-                width: '100%', 
-                height: '100%', 
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                borderRadius: '0.5rem',
-                backgroundColor: '#f3f4f6',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                zIndex: 1
-              }}>
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"></div>
               </div>
             )}
             
-            {/* İçerik metni - yarı saydam arka plan ile */}
-            <div style={{
-              position: 'absolute',
-              bottom: 0,
-              left: 0,
-              width: '100%',
-              padding: '1rem',
-              backgroundColor: 'rgba(255, 255, 255, 0.85)',
-              borderRadius: '0 0 0.5rem 0.5rem',
-              zIndex: 2
-            }}>
-              {page.title && <h2 style={{...titleStyle, color: '#000'}}>{page.title}</h2>}
-              <div>
-                {page.content.split('\n').map((paragraph, index) => (
-                  <p key={index} style={{...textStyle, color: '#000'}} className="mb-2">
-                    {paragraph.trim()}
-                  </p>
-                ))}
+            {/* Metin overlay */}
+            <div className="relative z-10 flex flex-col justify-end h-full p-8">
+              <div className="bg-white/90 dark:bg-gray-800/90 rounded-lg p-6 backdrop-blur-sm">
+                <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-white">{page.title}</h2>
+                <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{page.content}</p>
               </div>
             </div>
             
-            <div style={{...pageNumberStyle, color: '#fff', zIndex: 3, textShadow: '0 1px 2px rgba(0,0,0,0.5)'}}>
-              Sayfa {page.pageNumber}
+            {/* Sayfa numarası */}
+            <div className="absolute bottom-4 right-4 bg-white/80 dark:bg-gray-800/80 rounded-full w-8 h-8 flex items-center justify-center text-sm font-medium text-gray-700 dark:text-gray-300">
+              {page.pageNumber}
             </div>
           </div>
         );

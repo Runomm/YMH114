@@ -217,21 +217,32 @@ const BookCover: React.FC<BookCoverProps> = ({
         <div className="absolute inset-0 flex flex-col justify-between p-8">
           <div className="space-y-2">
             <div className={`${colors.accent} h-1 w-20 rounded mb-4`}></div>
-            <h1 className={`${colors.text} text-3xl font-bold leading-tight drop-shadow-lg ${colors.fontDisplay}`}>
+            <h1 className={`${colors.text} text-3xl md:text-4xl font-black leading-tight drop-shadow-2xl ${colors.fontDisplay}`}
+                style={{ 
+                  textShadow: '2px 2px 4px rgba(0,0,0,0.7), 0 0 8px rgba(0,0,0,0.3)',
+                  fontWeight: '900'
+                }}>
               {title || "Hikaye Başlığı"}
             </h1>
           </div>
           
           <div className="space-y-4">
             {author && (
-              <p className={`${colors.text} opacity-90 font-medium ${colors.fontBody}`}>
-                {author}
+              <p className={`${colors.text} opacity-95 font-bold text-lg ${colors.fontBody}`}
+                 style={{ 
+                   textShadow: '1px 1px 3px rgba(0,0,0,0.5)',
+                   fontWeight: '700'
+                 }}>
+                Yazar: {author}
               </p>
             )}
             
             <div className="flex items-center space-x-2">
               <div className={`${colors.accent} h-1 w-10 rounded`}></div>
-              <span className={`${colors.text} opacity-80 text-sm font-medium`}>StoryVista</span>
+              <span className={`${colors.text} opacity-90 text-sm font-bold`}
+                    style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.5)' }}>
+                StoryVista
+              </span>
             </div>
           </div>
         </div>

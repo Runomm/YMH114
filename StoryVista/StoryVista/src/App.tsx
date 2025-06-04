@@ -19,6 +19,7 @@ const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const LearnPage = lazy(() => import('./pages/LearnPage'));
 const LessonPage = lazy(() => import('./pages/LessonPage'));
+const LibraryPage = lazy(() => import('./pages/LibraryPage'));
 
 // Protected route component
 interface ProtectedRouteProps {
@@ -108,6 +109,16 @@ const App: React.FC = () => {
                 <Route path="/create-story" element={
                   <ProtectedRoute>
                     <CreateStoryPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/create" element={
+                  <ProtectedRoute>
+                    <CreateStoryPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="/library" element={
+                  <ProtectedRoute>
+                    <LibraryPage />
                   </ProtectedRoute>
                 } />
                 <Route path="/manual-story" element={
